@@ -166,8 +166,7 @@ sudo systemctl restart bosch-ebike-bridge bosch-ebike-dashboard
 
 ## Credits
 
-Protocol details and protobuf decoder ported from
-[ha-bosch-ebike](https://github.com/Xunil99/ha-bosch-ebike) by Xunil99.
+Inspired by [ha-bosch-ebike](https://github.com/Xunil99/ha-bosch-ebike) by [Xunil99](https://github.com/Xunil99) — great work on reverse-engineering the Bosch LDI protocol. I didn't have a spare ESP32 lying around, so I took the same idea and built a Python version that runs straight on a Raspberry Pi instead.
 
 ## License
 
