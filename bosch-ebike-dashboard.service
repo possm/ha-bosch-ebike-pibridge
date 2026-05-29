@@ -1,0 +1,18 @@
+[Unit]
+Description=Bosch eBike live web dashboard
+After=network-online.target bosch-ebike-bridge.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/bosch-ebike-bridge/dashboard.py /etc/bosch-ebike-bridge/config.yaml
+Restart=always
+RestartSec=10
+User=pi
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bosch-ebike-dashboard
+
+[Install]
+WantedBy=multi-user.target

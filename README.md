@@ -112,6 +112,19 @@ All entities appear automatically under **Settings → Devices & Services → MQ
 
 ---
 
+## Web dashboard
+
+A live dashboard is available at **http://e-bike-bridge.local:8080** (or the Pi's IP on port 8080).
+
+- Updates in real time via Server-Sent Events — no page reload needed
+- Shows speed, cadence, power, battery %, odometer for each bike
+- Status chips for light, motion, charging, lock, diagnosis
+- Works on phones and tablets too
+
+The dashboard service starts automatically alongside the bridge.
+
+---
+
 ## Service management
 
 ```bash
@@ -119,8 +132,12 @@ All entities appear automatically under **Settings → Devices & Services → MQ
 sudo systemctl status bosch-ebike-bridge
 sudo journalctl -u bosch-ebike-bridge -f
 
-# Restart
-sudo systemctl restart bosch-ebike-bridge
+# Dashboard
+sudo systemctl status bosch-ebike-dashboard
+sudo journalctl -u bosch-ebike-dashboard -f
+
+# Restart both
+sudo systemctl restart bosch-ebike-bridge bosch-ebike-dashboard
 ```
 
 ---
