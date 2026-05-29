@@ -14,6 +14,7 @@ import json
 import queue
 import sys
 import threading
+import time
 import yaml
 from flask import Flask, Response, render_template_string
 import paho.mqtt.client as mqtt
@@ -61,6 +62,16 @@ HTML = """<!DOCTYPE html>
       flex: 1;
       min-width: 280px;
       max-width: 420px;
+      transition: opacity 0.4s;
+    }
+    .bike-card.offline { opacity: 0.6; }
+
+    .last-seen {
+      font-size: 0.72rem;
+      color: #8b949e;
+      text-align: center;
+      margin-top: 14px;
+      font-style: italic;
     }
 
     .bike-header {
@@ -201,6 +212,22 @@ HTML = """<!DOCTYPE html>
       return `<div class="sensor ${cls}">${icon} ${label}</div>`;
     }
 
+    function timeAgo(ts) {
+      if (!ts) return null;
+      const secs = Math.floor(Date.now() / 1000 - ts);
+      if (secs < 60)  return `${secs}s ago`;
+      if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+      return `${Math.floor(secs / 3600)}h ago`;
+    }
+
+    // Update "last seen" labels every 10 seconds without a full re-render
+    setInterval(() => {
+      document.querySelectorAll("[data-last-seen]").forEach(el => {
+        const ts = parseFloat(el.dataset.lastSeen);
+        el.textContent = `Last seen ${timeAgo(ts)}`;
+      });
+    }, 10000);
+
     function render() {
       const slugs = Object.keys(state);
       const el = document.getElementById("bikes");
@@ -210,11 +237,12 @@ HTML = """<!DOCTYPE html>
         const b = state[slug];
         const d = b.data || {};
         const online = b.available;
+        const hasData = Object.keys(d).length > 0;
         const soc = d.battery_soc ?? 0;
         const color = batteryColor(soc);
 
         return `
-        <div class="bike-card">
+        <div class="bike-card ${online ? '' : 'offline'}">
           <div class="bike-header">
             <div class="status-dot ${online ? 'online' : ''}"></div>
             <div class="bike-name">${b.name || slug}</div>
@@ -263,6 +291,13 @@ HTML = """<!DOCTYPE html>
             ${chip('🔋', 'Light reserve',  d.light_reserve,       true)}
             ${chip('🔧', 'Diagnosis',      d.diagnosis_active,    true)}
           </div>
+
+          ${!online && hasData && b.last_seen ? `
+            <div class="last-seen" data-last-seen="${b.last_seen}">
+              Last seen ${timeAgo(b.last_seen)}
+            </div>` : ''}
+          ${!online && !hasData ? `
+            <div class="last-seen">No data received yet</div>` : ''}
         </div>`;
       }).join("");
     }
@@ -330,6 +365,7 @@ def _start_mqtt(config: dict, name_map: dict[str, str]) -> None:
             elif kind == "state":
                 try:
                     _state[slug]["data"] = json.loads(msg.payload)
+                    _state[slug]["last_seen"] = time.time()  # timestamp of last live data
                 except (json.JSONDecodeError, ValueError):
                     pass
             snap = dict(_state[slug])
