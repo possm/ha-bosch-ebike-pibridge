@@ -23,8 +23,10 @@ apt-get install -y \
 
 # ── 2. Python packages ────────────────────────────────────────────────────────
 echo "[2/4] Installing Python packages..."
-pip3 install --break-system-packages paho-mqtt 2>/dev/null \
-    || pip3 install paho-mqtt   # fallback for older pip
+# Prefer apt over pip to avoid PEP 668 issues on Bookworm
+apt-get install -y python3-paho-mqtt 2>/dev/null \
+    || pip3 install --break-system-packages paho-mqtt 2>/dev/null \
+    || pip3 install paho-mqtt
 
 # ── 3. Copy application files ─────────────────────────────────────────────────
 echo "[3/4] Installing application files to $INSTALL_DIR..."
@@ -44,24 +46,28 @@ if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
 fi
 
 # ── 4. Systemd service ────────────────────────────────────────────────────────
-echo "[4/4] Installing systemd service..."
+echo "[4/4] Installing and starting systemd service..."
 cp "$SCRIPT_DIR/$SERVICE_NAME.service" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
+# enable: start on every boot
+# --now:  also start immediately, no reboot needed
+systemctl enable --now "$SERVICE_NAME"
 
 echo ""
 echo "=== Installation complete ==="
+echo ""
+echo "The bridge is running and will start automatically on every reboot."
 echo ""
 echo "Next steps:"
 echo "  1. Edit $CONFIG_DIR/config.yaml"
 echo "     - Set mqtt.broker to your Home Assistant / Mosquitto IP"
 echo "     - Set mqtt.username / mqtt.password if required"
-echo "  2. Start the bridge:"
-echo "       sudo systemctl start $SERVICE_NAME"
-echo "  3. Bring your eBike within range (~10 m)"
-echo "     The bike will connect and pair automatically."
-echo "  4. Find the bike's BLE address:"
+echo "     Then apply:  sudo systemctl restart $SERVICE_NAME"
+echo "  2. Pair your eBike via the Bosch Flow App:"
+echo "     ⚙ gear icon → Components → Add new device"
+echo "     The bike should find 'HA eBike Bridge' within ~30 seconds."
+echo "  3. Find the bike's BLE address (after pairing):"
 echo "       sudo bluetoothctl -- devices"
 echo "     Add it to config.yaml under 'bikes:' to give it a friendly name."
-echo "  5. Check the log:"
+echo "  4. Check the log:"
 echo "       sudo journalctl -u $SERVICE_NAME -f"
