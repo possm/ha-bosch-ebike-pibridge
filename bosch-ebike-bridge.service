@@ -1,0 +1,25 @@
+[Unit]
+Description=Bosch eBike BLE → MQTT bridge
+Documentation=https://github.com/Xunil99/ha-bosch-ebike
+After=bluetooth.target network-online.target
+Wants=bluetooth.target network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/bosch-ebike-bridge/bridge.py /etc/bosch-ebike-bridge/config.yaml
+Restart=always
+RestartSec=15
+# Give BlueZ time to fully start on boot before we touch it
+ExecStartPre=/bin/sleep 5
+
+# Run as root so we can access BlueZ D-Bus system bus and set adapter props.
+# For a lower-privilege setup, add the service user to the 'bluetooth' group
+# and grant D-Bus policy access in /etc/dbus-1/system.d/.
+User=root
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bosch-ebike-bridge
+
+[Install]
+WantedBy=multi-user.target

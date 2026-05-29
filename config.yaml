@@ -1,0 +1,29 @@
+# Bosch eBike BLE Bridge – configuration
+# Copy to /etc/bosch-ebike-bridge/config.yaml on the Raspberry Pi.
+
+# Name shown in HA and in the BLE advertisement (what the eBike sees).
+bridge_name: "HA eBike Bridge"
+
+# MQTT broker – must be reachable from the Pi.
+# The Mosquitto add-on in HA works out of the box; just set the HA host IP.
+mqtt:
+  broker: 192.168.1.100    # ← change to your HA / Mosquitto IP
+  port: 1883
+  username: mqtt_user       # ← change or remove if no auth
+  password: mqtt_password   # ← change or remove if no auth
+  base_topic: bosch_ebike   # MQTT topic prefix; HA discovery uses homeassistant/
+
+# Optional: pre-name your bikes by BLE address.
+# If a bike's address is not listed here it will be auto-named "eBike XXXX"
+# using the last two bytes of its address.
+#
+# Finding the address after first pairing:
+#   sudo bluetoothctl
+#   > devices
+#   Device AB:CD:EF:01:23:45  <name shown by eBike>
+#
+bikes:
+  - address: "AB:CD:EF:01:23:45"   # ← replace with real address
+    name: "My eBike 1"
+  - address: "AB:CD:EF:67:89:AB"   # ← replace with real address (or remove if only one bike)
+    name: "My eBike 2"
