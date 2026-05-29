@@ -162,6 +162,11 @@ sudo systemctl restart bosch-ebike-bridge bosch-ebike-dashboard
 
 ---
 
+## Credits
+
+Protocol details and protobuf decoder ported from
+[ha-bosch-ebike](https://github.com/Xunil99/ha-bosch-ebike) by Xunil99.
+
 ## License
 
 Apache-2.0
