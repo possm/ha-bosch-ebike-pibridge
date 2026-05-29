@@ -113,7 +113,9 @@ class HaMqttPublisher:
                 "state_topic": state_topic,
                 "value_template": "{{ value_json." + key + " | default('') }}",
                 "unit_of_measurement": unit,
-                "availability_topic": avail_topic,
+                # No availability_topic: sensors keep their last known value
+                # when the bike is off. The 'connected' binary sensor is the
+                # explicit online/offline indicator.
                 "device": device,
             }
             if dev_class:
@@ -137,7 +139,10 @@ class HaMqttPublisher:
                 "value_template": (
                     "{{ 'ON' if value_json." + key + " else 'OFF' }}"
                 ),
-                "availability_topic": avail_topic,
+                # Only the 'connected' sensor gets an availability topic so
+                # it can properly reflect offline state. All others show last
+                # known values when the bike is disconnected.
+                **({"availability_topic": avail_topic} if key == "connected" else {}),
                 "device": device,
             }
             if dev_class:
@@ -153,11 +158,13 @@ class HaMqttPublisher:
         log.info("Published HA discovery for '%s' (%s)", bike_name, bike_id)
 
     def publish_state(self, bike_id: str, state: dict) -> None:
-        """Publish current sensor state for one bike."""
+        """Publish current sensor state for one bike (retained so HA keeps
+        last known values across restarts and when the bike is offline)."""
         slug = _slug(bike_id)
         self._client.publish(
             f"{self._base}/{slug}/state",
             json.dumps(state),
+            retain=True,
         )
 
     def publish_availability(self, bike_id: str, online: bool) -> None:
