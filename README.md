@@ -130,6 +130,8 @@ All 13 entities appear automatically under **Settings → Devices & Services →
 | Diagnosis Active | Binary sensor | — |
 | In Motion | Binary sensor | — |
 
+**When the bike is off or out of range**, all entities keep their last known values — speed, battery %, odometer, etc. remain visible in HA dashboards and automations. The **Connected** binary sensor is the explicit online/offline indicator. State values are published as retained MQTT messages so they survive HA and Pi reboots.
+
 ---
 
 ## Service management
@@ -158,7 +160,7 @@ sudo systemctl restart bosch-ebike-bridge bosch-ebike-dashboard
 | Bike not found in Flow App scan | Bridge not advertising | Check `ActiveInstances: 1` via `sudo bluetoothctl show` |
 | `LDI characteristic not found` | eBike firmware < v19 | Update firmware via the Bosch Flow App |
 | Entities show `unknown` after pairing | Bike disconnected before initial GATT read | Power-cycle the bike |
-| Dashboard shows no data after Pi reboot | MQTT state messages are not retained | Ride or power-cycle the bike to trigger a fresh notification |
+| Entities show `unavailable` after updating | HA still has old discovery config with availability topic | Delete the MQTT device in HA and let it re-discover on next bike connection |
 
 ---
 
