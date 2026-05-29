@@ -1,4 +1,4 @@
-# ha-bosch-pibridge
+# ha-bosch-ebike-pibridge
 
 Raspberry Pi BLE → MQTT bridge for the **Bosch eBike Live Data Interface (LDI)**.
 
