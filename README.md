@@ -37,12 +37,12 @@ eBike (BLE central)
 ## Installation
 
 ```bash
-git clone https://github.com/your-username/ha-bosch-pibridge.git
-cd ha-bosch-pibridge
+git clone https://github.com/possm/ha-bosch-ebike-pibridge.git
+cd ha-bosch-ebike-pibridge
 sudo bash install.sh
 ```
 
-The script installs all dependencies (`python3-dbus`, `python3-gi`, `python3-paho-mqtt`, `bluez`) and registers the systemd service.
+The script installs all system dependencies (`python3-dbus`, `python3-gi`, `python3-yaml`, `bluetooth`, `bluez`, `paho-mqtt`) and registers the systemd service.
 
 ---
 
@@ -65,7 +65,7 @@ mqtt:
 bikes:
   - address: "AA:BB:CC:DD:EE:FF"
     name: "My eBike"
-  - address: "XX:XX:XX:XX:XX:XX"
+  - address: "AA:BB:CC:DD:EE:FF"
     name: "Partner's eBike"
 ```
 
