@@ -2,7 +2,9 @@
 
 Raspberry Pi BLE → MQTT bridge for the **Bosch eBike Live Data Interface (LDI)**.
 
-Replaces the ESP32 bridge from [ha-bosch-ebike](https://github.com/Xunil99/ha-bosch-ebike) with a Python service that runs directly on a Raspberry Pi 4 (or any Pi with Bluetooth 4.x/5.0). One Pi handles **two bikes simultaneously**.
+Runs directly on a Raspberry Pi instead of an ESP32. One Pi handles **two bikes simultaneously** using its built-in Bluetooth 5.0. Includes a live web dashboard viewable in any browser.
+
+> Protocol details based on [ha-bosch-ebike](https://github.com/Xunil99/ha-bosch-ebike) by Xunil99.
 
 ---
 
@@ -13,6 +15,7 @@ eBike (BLE central)
   └─connects to──▶ Raspberry Pi (BLE peripheral, advertising SolicitUUID)
                        └─GATT client──▶ reads eb21 notifications
                            └─MQTT──▶ Home Assistant (auto-discovery)
+                           └─HTTP──▶ Web dashboard (port 8080)
 ```
 
 1. The Pi advertises a **Service Solicitation UUID** matching the Bosch LDI GATT service
@@ -20,6 +23,7 @@ eBike (BLE central)
 3. The Pi subscribes to GATT notifications on the Live Data characteristic (`eb21`)
 4. Each notification is decoded from protobuf and published as JSON to MQTT
 5. Home Assistant auto-discovers all 13 entities via MQTT discovery
+6. The web dashboard reads the same MQTT feed and displays live data in the browser
 
 ---
 
@@ -27,10 +31,10 @@ eBike (BLE central)
 
 | | |
 |---|---|
-| **Hardware** | Raspberry Pi 3B+ / 4 / 5 / Zero 2W (built-in BT required) |
+| **Hardware** | Raspberry Pi 3B+ / 4 / 5 / Zero 2W (built-in Bluetooth required) |
 | **OS** | Raspberry Pi OS Lite 64-bit (Bookworm) |
 | **eBike** | Bosch smart system, control unit firmware **≥ v19** |
-| **HA** | Home Assistant with Mosquitto MQTT broker add-on |
+| **Home Assistant** | Mosquitto MQTT broker add-on |
 
 ---
 
@@ -42,7 +46,7 @@ cd ha-bosch-ebike-pibridge
 sudo bash install.sh
 ```
 
-The script installs all system dependencies (`python3-dbus`, `python3-gi`, `python3-yaml`, `bluetooth`, `bluez`, `paho-mqtt`) and registers the systemd service.
+The script installs all dependencies (`python3-dbus`, `python3-gi`, `python3-yaml`, `python3-flask`, `bluetooth`, `bluez`, `paho-mqtt`), copies files to `/opt/bosch-ebike-bridge/`, and enables both systemd services so they start on every boot.
 
 ---
 
@@ -54,86 +58,89 @@ Edit `/etc/bosch-ebike-bridge/config.yaml`:
 bridge_name: "HA eBike Bridge"
 
 mqtt:
-  broker: 192.168.x.x     # your HA / Mosquitto IP
+  broker: 192.168.x.x       # your HA / Mosquitto IP
   port: 1883
   username: mqtt-user
   password: yourpassword
   base_topic: bosch_ebike
 
+# Optional: change the dashboard port (default 8080)
+# dashboard_port: 8080
+
 # Optional: give bikes a friendly name by BLE address.
-# Find the address after first pairing: sudo bluetoothctl -- devices
+# Find the address after first pairing:
+#   sudo bluetoothctl -- devices
 bikes:
   - address: "AA:BB:CC:DD:EE:FF"
     name: "My eBike"
-  - address: "AA:BB:CC:DD:EE:FF"
+  - address: "AA:BB:CC:DD:EE:GG"
     name: "Partner's eBike"
 ```
 
-Then restart the service:
+Apply changes:
 ```bash
-sudo systemctl restart bosch-ebike-bridge
+sudo systemctl restart bosch-ebike-bridge bosch-ebike-dashboard
 ```
 
 ---
 
 ## Pairing a new bike
 
-The eBike only scans for accessories when explicitly triggered via the **Bosch Flow App**:
+The eBike only scans for accessories when explicitly triggered via the **Bosch Flow App** — it does not connect automatically on first use.
 
-1. Power on the eBike, make sure the Pi bridge is running
+1. Power on the eBike and make sure the bridge is running
 2. Open the **Bosch Flow App** → your bike → **⚙ gear icon** (top-right)
 3. Tap **Components** → **Add new device**
 4. The bike enters scan mode — it should find **"HA eBike Bridge"** within ~30 seconds
 5. Confirm pairing on the bike's display (no PIN needed)
 
-After pairing the bike reconnects automatically whenever it powers on within range.
-
----
-
-## Entities in Home Assistant
-
-All entities appear automatically under **Settings → Devices & Services → MQTT**:
-
-| Entity | Unit |
-|---|---|
-| Speed | km/h |
-| Cadence | rpm |
-| Rider Power | W |
-| Ambient Brightness | lx |
-| Battery SoC | % |
-| Odometer | km |
-| Connected | — |
-| Light | — |
-| System Locked | — |
-| Charger Connected | — |
-| Light Reserve | — |
-| Diagnosis Active | — |
-| In Motion | — |
+After pairing the bike reconnects automatically every time it powers on within range of the Pi.
 
 ---
 
 ## Web dashboard
 
-A live dashboard is available at **http://e-bike-bridge.local:8080** (or the Pi's IP on port 8080).
+Open **http://e-bike-bridge.local:8080** in any browser (phone, tablet, laptop).
 
-- Updates in real time via Server-Sent Events — no page reload needed
-- Shows speed, cadence, power, battery %, odometer for each bike
-- Status chips for light, motion, charging, lock, diagnosis
-- Works on phones and tablets too
+- Live speed, cadence, power, battery %, odometer — updates instantly via Server-Sent Events, no page reload
+- Battery bar with colour coding (green → orange → red)
+- Status chips: light, in motion, charging, locked, light reserve, diagnosis
+- When a bike is **offline**: card dims and shows last known values with a "Last seen X ago" label that counts up every 10 seconds
+- Both bikes shown side by side when both are connected
 
-The dashboard service starts automatically alongside the bridge.
+---
+
+## Entities in Home Assistant
+
+All 13 entities appear automatically under **Settings → Devices & Services → MQTT**:
+
+| Entity | Type | Unit |
+|---|---|---|
+| Speed | Sensor | km/h |
+| Cadence | Sensor | rpm |
+| Rider Power | Sensor | W |
+| Ambient Brightness | Sensor | lx |
+| Battery SoC | Sensor | % |
+| Odometer | Sensor | km |
+| Connected | Binary sensor | — |
+| Light | Binary sensor | — |
+| System Locked | Binary sensor | — |
+| Charger Connected | Binary sensor | — |
+| Light Reserve | Binary sensor | — |
+| Diagnosis Active | Binary sensor | — |
+| In Motion | Binary sensor | — |
 
 ---
 
 ## Service management
 
 ```bash
-# Status and live logs
+# Status
 sudo systemctl status bosch-ebike-bridge
-sudo journalctl -u bosch-ebike-bridge -f
-
-# Dashboard
 sudo systemctl status bosch-ebike-dashboard
+
+# Live logs
+sudo journalctl -u bosch-ebike-bridge -f
 sudo journalctl -u bosch-ebike-dashboard -f
 
 # Restart both
@@ -146,18 +153,14 @@ sudo systemctl restart bosch-ebike-bridge bosch-ebike-dashboard
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `MQTT connect failed (rc=5)` | Wrong credentials | Check `config.yaml` and verify the user exists in Mosquitto |
-| `org.bluez.Error.Failed` on start | Bluetooth soft-blocked | `sudo rfkill unblock bluetooth` (the service does this automatically on next restart) |
-| Bike not found in Flow App scan | Bridge not advertising | Check `Active Instances: 1` via `sudo bluetoothctl show` |
-| `LDI characteristic not found` | eBike firmware < v19 | Update via the Bosch Flow App |
-| Entities show `unknown` after pairing | Bike disconnected before initial read | Power-cycle the bike |
+| `MQTT connect failed (rc=5)` | Wrong credentials | Check `config.yaml`; verify the user exists in the Mosquitto add-on config |
+| `org.bluez.Error.Failed` on start | Bluetooth soft-blocked by rfkill | `sudo rfkill unblock bluetooth` — the service does this automatically on the next restart |
+| Bike not found in Flow App scan | Bridge not advertising | Check `ActiveInstances: 1` via `sudo bluetoothctl show` |
+| `LDI characteristic not found` | eBike firmware < v19 | Update firmware via the Bosch Flow App |
+| Entities show `unknown` after pairing | Bike disconnected before initial GATT read | Power-cycle the bike |
+| Dashboard shows no data after Pi reboot | MQTT state messages are not retained | Ride or power-cycle the bike to trigger a fresh notification |
 
 ---
-
-## Credits
-
-Protocol details and protobuf decoder ported from
-[ha-bosch-ebike](https://github.com/Xunil99/ha-bosch-ebike) by Xunil99.
 
 ## License
 
