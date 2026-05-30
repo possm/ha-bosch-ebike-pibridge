@@ -144,6 +144,10 @@ class EbikeBridge:
         self._bus = dbus.SystemBus()
         self._loop = GLib.MainLoop()
 
+        # BLE advertisement handle + adapter path (set in run()).
+        self._adv = None
+        self._adapter_path = None
+
         # Per-bike state: addr (upper) → {name, state, char_path}
         self._bikes: dict[str, dict] = {}
         for bike in config.get("bikes", []):
@@ -204,6 +208,34 @@ class EbikeBridge:
             error_handler=lambda e: log.error("RegisterAdvertisement failed: %s", e),
         )
         return adv
+
+    def _readvertise(self) -> None:
+        """Re-register the named LE advertisement.
+
+        BlueZ stops (releases) a connectable advertisement as soon as a peer
+        connects. With only one advert object the bridge then falls back to the
+        adapter's generic discoverable mode, which exposes the raw MAC but NOT
+        our bridge name or the LDI Service Solicitation UUID — so a SECOND eBike
+        only sees a nameless MAC. Re-registering after each connect/disconnect
+        keeps the named, solicitation-carrying advert live for the next bike.
+        """
+        try:
+            mgr = dbus.Interface(
+                self._bus.get_object(BLUEZ_SERVICE, self._adapter_path),
+                LE_ADV_MGR_IFACE,
+            )
+            # Unregister the old advert object first; ignore if already gone.
+            try:
+                mgr.UnregisterAdvertisement(ADV_PATH)
+            except dbus.DBusException:
+                pass
+            try:
+                self._adv.remove_from_connection()
+            except Exception:
+                pass
+            self._adv = self._register_advertisement(self._adapter_path)
+        except dbus.DBusException as exc:
+            log.warning("Re-advertise failed: %s", exc)
 
     def _find_ldi_char(self, device_path: str) -> str | None:
         """Return the D-Bus path of the LDI Live Data characteristic, or None."""
@@ -319,6 +351,10 @@ class EbikeBridge:
         self._mqtt.publish_availability(bike_addr, True)
         self._subscribe(char_path, bike_addr)
 
+        # BlueZ released our advert when this bike connected. Re-register it so
+        # a second eBike can still discover the bridge by name (not just MAC).
+        self._readvertise()
+
     def _on_disconnected(self, addr: str) -> None:
         bike_addr = addr.upper()
         log.info("eBike disconnected: %s", bike_addr)
@@ -326,6 +362,9 @@ class EbikeBridge:
             self._bikes[bike_addr]["state"] = {}
             self._bikes[bike_addr]["char_path"] = None
         self._mqtt.publish_availability(bike_addr, False)
+
+        # Ensure the named advert is live again after a disconnect.
+        self._readvertise()
 
     # ── D-Bus signal monitoring ───────────────────────────────────────────────
 
@@ -391,9 +430,10 @@ class EbikeBridge:
 
     def run(self) -> None:
         adapter_path = self._get_adapter_path()
+        self._adapter_path = adapter_path
         self._setup_adapter(adapter_path)
         self._register_agent()
-        self._register_advertisement(adapter_path)
+        self._adv = self._register_advertisement(adapter_path)
         self._monitor()
 
         def _shutdown(signum, frame) -> None:
