@@ -104,10 +104,21 @@ The eBike only scans for accessories when explicitly triggered via the **Bosch F
 1. Power on the eBike and make sure the bridge is running
 2. Open the **Bosch Flow App** → your bike → **⚙ gear icon** (top-right)
 3. Tap **Components** → **Add new device**
-4. The bike enters scan mode — it should find **"HA eBike Bridge"** within ~30 seconds
+4. The bike enters scan mode — it should find the bridge within ~30 seconds
 5. Confirm pairing on the bike's display (no PIN needed)
 
-After pairing the bike reconnects automatically every time it powers on within range of the Pi.
+> **Note on the bridge name during pairing:** in the bike's accessory list the
+> bridge may appear as a raw Bluetooth address (`A4:0D:BC:…`) rather than
+> "HA eBike Bridge". This is a BlueZ limitation — the device name is sent in the
+> BLE scan response, which the bike's pairing scan does not read. Just select
+> the bridge anyway. It's cosmetic: after bonding, each bike reconnects
+> automatically and shows its correct name in Home Assistant and the dashboard.
+
+To pair a **second bike**, repeat the same steps with the other bike. The bridge
+keeps advertising while a slot is free and one Pi handles both bikes at once.
+
+After pairing, a bike reconnects automatically every time it powers on within
+range of the Pi.
 
 ---
 
@@ -171,6 +182,8 @@ sudo systemctl restart bosch-ebike-bridge bosch-ebike-dashboard
 | `MQTT connect failed (rc=5)` | Wrong credentials | Check `config.yaml`; verify the user exists in the Mosquitto add-on config |
 | `org.bluez.Error.Failed` on start | Bluetooth soft-blocked by rfkill | `sudo rfkill unblock bluetooth` — the service does this automatically on the next restart |
 | Bike not found in Flow App scan | Bridge not advertising | Check `ActiveInstances: 1` via `sudo bluetoothctl show` |
+| Bridge shows as a MAC address, not its name, during pairing | BlueZ sends the name in the scan response, which the bike's passive scan ignores | Cosmetic — select it anyway; correct names appear in HA after bonding |
+| Second bike won't connect while first is connected | Older version, or advertising stopped after the first connect | Update to the latest version (re-advertises after each connection) |
 | `LDI characteristic not found` | eBike firmware < v19 | Update firmware via the Bosch Flow App |
 | Entities show `unknown` after pairing | Bike disconnected before initial GATT read | Power-cycle the bike |
 | Entities show `unavailable` after updating | HA still has old discovery config with availability topic | Delete the MQTT device in HA and let it re-discover on next bike connection |
