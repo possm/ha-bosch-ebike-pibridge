@@ -4,7 +4,11 @@ Raspberry Pi BLE → Home Assistant / MQTT bridge for the **Bosch eBike Live Dat
 
 Runs directly on a Raspberry Pi instead of an ESP32. One Pi handles **two bikes simultaneously** using its built-in Bluetooth 5.0. Includes a live web dashboard viewable in any browser.
 
-<img src="docs/dashboard.png" alt="eBike dashboard" width="320">
+<p align="center">
+  <img src="docs/dashboard.png" alt="eBike web dashboard" width="320">
+  &nbsp;&nbsp;
+  <img src="docs/ha-sensors.png" alt="Home Assistant sensors" width="320">
+</p>
 
 > Protocol details based on [ha-bosch-ebike](https://github.com/Xunil99/ha-bosch-ebike) by Xunil99.
 
@@ -115,8 +119,6 @@ Open **http://e-bike-bridge.local:8080** in any browser (phone, tablet, laptop).
 ## Entities in Home Assistant
 
 All 13 entities appear automatically under **Settings → Devices & Services → MQTT**:
-
-<img src="docs/ha-sensors.png" alt="Home Assistant sensors" width="320">
 
 | Entity | Type | Unit |
 |---|---|---|
