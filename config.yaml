@@ -2,7 +2,12 @@
 # Copy to /etc/bosch-ebike-bridge/config.yaml on the Raspberry Pi.
 
 # Name shown in HA and in the BLE advertisement (what the eBike sees).
-bridge_name: "HA eBike Bridge"
+# Name the eBike sees when scanning for a new accessory.
+# Keep it <= 8 characters: the BLE primary advertising packet only has room
+# for the LDI service UUID plus a short name. Longer names get pushed into the
+# scan response, which the eBike's passive scan does not read (it would then
+# show only the MAC address).
+bridge_name: "HA-eBike"
 
 # MQTT broker – must be reachable from the Pi.
 # The Mosquitto add-on in HA works out of the box; just set the HA host IP.

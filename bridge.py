@@ -107,19 +107,30 @@ class LDIAdvertisement(dbus.service.Object):
 
     BlueZ's SolicitUUIDs property maps directly to AD type 0x15 (128-bit
     Service Solicitation), which is exactly what the eBike scans for.
-    Appearance 0x0480 = Cycling Generic.
+
+    Name placement note: the primary advertising PDU is capped at 31 bytes.
+    Flags (3) + the 128-bit Solicitation UUID (18) already use 21, leaving only
+    10 bytes — exactly enough for a Complete Local Name of up to 8 characters
+    (2 bytes overhead + 8). BlueZ fills the primary PDU first and only spills to
+    the scan response when it overflows, so we deliberately DROP the Appearance
+    field (which would cost 4 bytes and push the name into the scan response).
+    The eBike's accessory scan is passive and never requests the scan response,
+    so the name must live in the primary PDU to be visible. Keep bridge_name
+    ≤ 8 characters.
     """
 
     def __init__(self, bus: dbus.SystemBus, local_name: str) -> None:
         dbus.service.Object.__init__(self, bus, ADV_PATH)
-        self._local_name = local_name
+        # Truncate defensively so we never overflow the primary PDU and push
+        # the name into the scan response.
+        self._local_name = local_name[:8]
 
     def _props(self) -> dict:
         return {
             "Type":          dbus.String("peripheral"),
             "SolicitUUIDs":  dbus.Array([LDI_SERVICE_UUID], signature="s"),
             "LocalName":     dbus.String(self._local_name),
-            "Appearance":    dbus.UInt16(0x0480),
+            # Appearance intentionally omitted — see class docstring.
             "Discoverable":  dbus.Boolean(True),
         }
 
@@ -209,30 +220,67 @@ class EbikeBridge:
         )
         return adv
 
-    def _readvertise(self) -> None:
-        """Re-register the named LE advertisement.
+    def _all_known_bikes_connected(self) -> bool:
+        """True if every bike listed in config is currently connected.
 
-        BlueZ stops (releases) a connectable advertisement as soon as a peer
-        connects. With only one advert object the bridge then falls back to the
-        adapter's generic discoverable mode, which exposes the raw MAC but NOT
-        our bridge name or the LDI Service Solicitation UUID — so a SECOND eBike
-        only sees a nameless MAC. Re-registering after each connect/disconnect
-        keeps the named, solicitation-carrying advert live for the next bike.
+        A bike counts as connected once its char_path is set. If no bikes are
+        configured (auto-discover mode) this is always False, so the bridge
+        keeps advertising to pick up any bike.
         """
+        configured = [b for b in self._cfg.get("bikes", [])]
+        if not configured:
+            return False
+        for b in configured:
+            addr = b["address"].upper()
+            state = self._bikes.get(addr)
+            if not state or not state.get("char_path"):
+                return False
+        return True
+
+    def _unregister_advertisement(self) -> None:
+        """Tear down the current advert object, ignoring if already gone."""
         try:
             mgr = dbus.Interface(
                 self._bus.get_object(BLUEZ_SERVICE, self._adapter_path),
                 LE_ADV_MGR_IFACE,
             )
-            # Unregister the old advert object first; ignore if already gone.
             try:
                 mgr.UnregisterAdvertisement(ADV_PATH)
             except dbus.DBusException:
                 pass
             try:
-                self._adv.remove_from_connection()
+                if self._adv is not None:
+                    self._adv.remove_from_connection()
             except Exception:
                 pass
+            self._adv = None
+        except dbus.DBusException as exc:
+            log.warning("Unregister advertisement failed: %s", exc)
+
+    def _readvertise(self) -> None:
+        """Keep the named LE advertisement in the right state.
+
+        BlueZ stops (releases) a connectable advertisement as soon as a peer
+        connects. With only one advert object the bridge then falls back to the
+        adapter's generic discoverable mode, which exposes the raw MAC but NOT
+        our bridge name or the LDI Service Solicitation UUID — so a SECOND eBike
+        only sees a nameless MAC.
+
+        Policy:
+          • If every configured bike is connected, stop advertising entirely —
+            there is no free slot, so broadcasting just wastes airtime and
+            invites unknown devices.
+          • Otherwise, (re-)register the named, solicitation-carrying advert so
+            the next bike can still discover the bridge by name.
+        """
+        if self._all_known_bikes_connected():
+            log.info("All configured bikes connected — stopping advertising")
+            self._unregister_advertisement()
+            return
+
+        try:
+            # Drop any stale advert object before re-registering.
+            self._unregister_advertisement()
             self._adv = self._register_advertisement(self._adapter_path)
         except dbus.DBusException as exc:
             log.warning("Re-advertise failed: %s", exc)
