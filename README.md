@@ -1,6 +1,6 @@
 # ha-bosch-ebike-pibridge
 
-Raspberry Pi BLE → MQTT bridge for the **Bosch eBike Live Data Interface (LDI)**.
+RRaspberry Pi BLE → Home Assistant / MQTT bridge for the **Bosch eBike Live Data Interface (LDI)**.
 
 Runs directly on a Raspberry Pi instead of an ESP32. One Pi handles **two bikes simultaneously** using its built-in Bluetooth 5.0. Includes a live web dashboard viewable in any browser.
 
