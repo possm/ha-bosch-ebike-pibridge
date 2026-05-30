@@ -1,7 +1,6 @@
 # Bosch eBike BLE Bridge – configuration
 # Copy to /etc/bosch-ebike-bridge/config.yaml on the Raspberry Pi.
 
-# Name shown in HA and in the BLE advertisement (what the eBike sees).
 # Name shown in HA and in the BLE advertisement. Note: BlueZ places the name
 # in the scan response, which active scanners (phones, the Bosch Flow app) read
 # fine. During the eBike's one-time pairing scan it may show only the MAC; this
