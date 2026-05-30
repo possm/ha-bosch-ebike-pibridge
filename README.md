@@ -17,8 +17,6 @@ Runs directly on a Raspberry Pi instead of an ESP32. One Pi handles **two bikes 
   </tr>
 </table>
 
-> Protocol details based on [ha-bosch-ebike](https://github.com/Xunil99/ha-bosch-ebike) by Xunil99.
-
 ---
 
 ## How it works
@@ -37,6 +35,8 @@ eBike (BLE central)
 4. Each notification is decoded from protobuf and published as JSON to MQTT
 5. Home Assistant auto-discovers all 13 entities via MQTT discovery
 6. The web dashboard reads the same MQTT feed and displays live data in the browser
+
+> Protocol details based on [ha-bosch-ebike](https://github.com/Xunil99/ha-bosch-ebike) by Xunil99.
 
 ---
 
