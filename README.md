@@ -116,6 +116,8 @@ Open **http://e-bike-bridge.local:8080** in any browser (phone, tablet, laptop).
 
 All 13 entities appear automatically under **Settings → Devices & Services → MQTT**:
 
+<img src="docs/ha-sensors.png" alt="Home Assistant sensors" width="320">
+
 | Entity | Type | Unit |
 |---|---|---|
 | Speed | Sensor | km/h |
