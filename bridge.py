@@ -108,29 +108,31 @@ class LDIAdvertisement(dbus.service.Object):
     BlueZ's SolicitUUIDs property maps directly to AD type 0x15 (128-bit
     Service Solicitation), which is exactly what the eBike scans for.
 
-    Name placement note: the primary advertising PDU is capped at 31 bytes.
-    Flags (3) + the 128-bit Solicitation UUID (18) already use 21, leaving only
-    10 bytes — exactly enough for a Complete Local Name of up to 8 characters
-    (2 bytes overhead + 8). BlueZ fills the primary PDU first and only spills to
-    the scan response when it overflows, so we deliberately DROP the Appearance
-    field (which would cost 4 bytes and push the name into the scan response).
-    The eBike's accessory scan is passive and never requests the scan response,
-    so the name must live in the primary PDU to be visible. Keep bridge_name
-    ≤ 8 characters.
+    Appearance 0x0480 = Cycling Generic.
+
+    Name placement note: BlueZ's high-level LEAdvertisement1 D-Bus API always
+    puts the LocalName in the SCAN RESPONSE, not the primary advertising PDU —
+    and offers no way to control this (verified with btmon). A scanner only
+    receives the name if it does an ACTIVE scan (sends a scan request). Phones
+    and the Bosch Flow app do active scans, so they show the bridge name fine.
+    The eBike's own accessory-discovery scan appears to be passive, so during
+    that one-time pairing step it may show only the MAC address. This is
+    cosmetic: once bonded, the bike reconnects automatically and the correct
+    per-bike names appear in Home Assistant and the dashboard. Forcing the name
+    into the primary PDU would require bypassing BlueZ with raw HCI commands,
+    which is fragile and conflicts with bluetoothd — deliberately not done.
     """
 
     def __init__(self, bus: dbus.SystemBus, local_name: str) -> None:
         dbus.service.Object.__init__(self, bus, ADV_PATH)
-        # Truncate defensively so we never overflow the primary PDU and push
-        # the name into the scan response.
-        self._local_name = local_name[:8]
+        self._local_name = local_name
 
     def _props(self) -> dict:
         return {
             "Type":          dbus.String("peripheral"),
             "SolicitUUIDs":  dbus.Array([LDI_SERVICE_UUID], signature="s"),
             "LocalName":     dbus.String(self._local_name),
-            # Appearance intentionally omitted — see class docstring.
+            "Appearance":    dbus.UInt16(0x0480),
             "Discoverable":  dbus.Boolean(True),
         }
 
