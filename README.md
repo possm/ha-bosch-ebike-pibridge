@@ -4,8 +4,7 @@ Raspberry Pi BLE → Home Assistant / MQTT bridge for the **Bosch eBike Live Dat
 
 Runs directly on a Raspberry Pi instead of an ESP32. One Pi handles **two bikes simultaneously** using its built-in Bluetooth 5.0. Includes a live web dashboard viewable in any browser.
 
-![eBike dashboard](docs/dashboard.png)
-<!-- Save a screenshot of the web dashboard to docs/dashboard.png to display it here -->
+<img src="docs/dashboard.png" alt="eBike dashboard" width="320">
 
 > Protocol details based on [ha-bosch-ebike](https://github.com/Xunil99/ha-bosch-ebike) by Xunil99.
 
