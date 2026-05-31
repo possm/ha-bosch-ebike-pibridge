@@ -161,6 +161,13 @@ class EbikeBridge:
         self._adv = None
         self._adapter_path = None
 
+        # Consecutive failed-pairing counter per address. A "failed pairing" is
+        # a disconnect that happened before services ever resolved — the classic
+        # symptom of a stale bond after a reboot (SMP "Authentication Failed").
+        # After STALE_BOND_THRESHOLD such failures we drop the bond so the bike
+        # can re-pair automatically. Reset to 0 on every successful resolve.
+        self._connect_fails: dict[str, int] = {}
+
         # Per-bike state: addr (upper) → {name, state, char_path}
         self._bikes: dict[str, dict] = {}
         for bike in config.get("bikes", []):
@@ -183,18 +190,79 @@ class EbikeBridge:
     # ── BlueZ helpers ─────────────────────────────────────────────────────────
 
     def _get_adapter_path(self) -> str:
-        om = dbus.Interface(self._bus.get_object(BLUEZ_SERVICE, "/"), OM_IFACE)
-        for path, ifaces in om.GetManagedObjects().items():
-            if ADAPTER_IFACE in ifaces:
-                return str(path)
+        # On a cold boot the controller (hci0) may not be enumerated on D-Bus
+        # yet when the service starts. Poll briefly instead of failing outright
+        # so the bridge survives a reboot on slower boards (Pi 3) as well as
+        # faster ones (Pi 4).
+        for attempt in range(1, 16):
+            om = dbus.Interface(self._bus.get_object(BLUEZ_SERVICE, "/"), OM_IFACE)
+            for path, ifaces in om.GetManagedObjects().items():
+                if ADAPTER_IFACE in ifaces:
+                    return str(path)
+            log.warning(
+                "No Bluetooth adapter yet (attempt %d/15) — waiting for hci0",
+                attempt,
+            )
+            time.sleep(2)
         raise RuntimeError("No Bluetooth adapter found. Is bluetoothd running?")
+
+    @staticmethod
+    def _rfkill_unblock_bluetooth() -> None:
+        """Best-effort `rfkill unblock bluetooth`, model/path agnostic.
+
+        On a fresh boot systemd-rfkill may restore the adapter to a SOFT-BLOCKED
+        state, so powering it on via BlueZ fails with org.bluez.Error.Failed.
+        The systemd unit already calls rfkill via ExecStartPre, but on slower
+        boards (e.g. Pi 3) the unblock can land before the controller is fully
+        up. Calling it again here, with the binary looked up across the usual
+        locations, closes that race on both Pi 3 and Pi 4.
+        """
+        for binary in ("rfkill", "/usr/sbin/rfkill", "/sbin/rfkill"):
+            try:
+                subprocess.run(
+                    [binary, "unblock", "bluetooth"],
+                    check=False,
+                    capture_output=True,
+                    timeout=5,
+                )
+                return
+            except (FileNotFoundError, subprocess.SubprocessError):
+                continue
+        log.warning("rfkill not found in PATH or sbin — could not unblock BT")
 
     def _setup_adapter(self, adapter_path: str) -> None:
         adapter = self._bus.get_object(BLUEZ_SERVICE, adapter_path)
         props = dbus.Interface(adapter, PROPS_IFACE)
-        props.Set(ADAPTER_IFACE, "Powered",       dbus.Boolean(True))
-        props.Set(ADAPTER_IFACE, "Discoverable",  dbus.Boolean(True))
-        props.Set(ADAPTER_IFACE, "Pairable",       dbus.Boolean(True))
+
+        # Powering on can fail right after boot if the adapter is still
+        # rfkill-soft-blocked or bluetoothd hasn't finished bringing hci0 up.
+        # Retry with an rfkill unblock between attempts instead of crashing —
+        # this self-heals across reboots on any board (Pi 3 / Pi 4 / etc.).
+        last_exc: Exception | None = None
+        for attempt in range(1, 11):
+            try:
+                props.Set(ADAPTER_IFACE, "Powered", dbus.Boolean(True))
+                last_exc = None
+                break
+            except dbus.DBusException as exc:
+                last_exc = exc
+                log.warning(
+                    "Adapter power-on attempt %d/10 failed (%s) — "
+                    "unblocking rfkill and retrying",
+                    attempt, exc.get_dbus_name(),
+                )
+                self._rfkill_unblock_bluetooth()
+                time.sleep(2)
+        if last_exc is not None:
+            raise last_exc
+
+        # These are non-fatal niceties — log but don't crash if they fail.
+        for prop in ("Discoverable", "Pairable"):
+            try:
+                props.Set(ADAPTER_IFACE, prop, dbus.Boolean(True))
+            except dbus.DBusException as exc:
+                log.warning("Could not set adapter %s: %s", prop, exc)
+
         log.info("Adapter %s: powered, discoverable, pairable", adapter_path)
 
     def _register_agent(self) -> JustWorksAgent:
@@ -286,6 +354,34 @@ class EbikeBridge:
             self._adv = self._register_advertisement(self._adapter_path)
         except dbus.DBusException as exc:
             log.warning("Re-advertise failed: %s", exc)
+
+    def _device_path(self, addr: str) -> dbus.ObjectPath:
+        """BlueZ object path for a peer, e.g. /org/bluez/hci0/dev_A4_0D_BC_..."""
+        return dbus.ObjectPath(
+            f"{self._adapter_path}/dev_{addr.upper().replace(':', '_')}"
+        )
+
+    def _remove_bond(self, addr: str) -> None:
+        """Delete a stale bond so the bike can re-pair cleanly.
+
+        After a reboot or a controller change, the bond keys stored on the Pi
+        can disagree with the bike's, causing the SMP handshake to fail with
+        "Authentication Failed" and a connect/disconnect loop. BlueZ's
+        Adapter1.RemoveDevice() drops the device and its stored keys; the bike
+        then re-pairs automatically on its next connection attempt (our
+        JustWorksAgent auto-accepts), with no manual intervention.
+        """
+        try:
+            adapter = dbus.Interface(
+                self._bus.get_object(BLUEZ_SERVICE, self._adapter_path),
+                ADAPTER_IFACE,
+            )
+            adapter.RemoveDevice(self._device_path(addr))
+            log.warning("Removed stale bond for %s — will re-pair on next connect", addr)
+        except dbus.DBusException as exc:
+            log.warning("RemoveDevice failed for %s: %s", addr, exc)
+        finally:
+            self._connect_fails[addr] = 0
 
     def _find_ldi_char(self, device_path: str) -> str | None:
         """Return the D-Bus path of the LDI Live Data characteristic, or None."""
@@ -392,6 +488,9 @@ class EbikeBridge:
 
         log.info("LDI characteristic found at %s", char_path)
 
+        # Successful resolve → connection is healthy, clear any failure count.
+        self._connect_fails[bike_addr] = 0
+
         if bike_addr not in self._bikes:
             name = f"eBike {bike_addr[-5:].replace(':', '')}"
             self._bikes[bike_addr] = {"name": name, "state": {}, "char_path": char_path}
@@ -408,10 +507,28 @@ class EbikeBridge:
     def _on_disconnected(self, addr: str) -> None:
         bike_addr = addr.upper()
         log.info("eBike disconnected: %s", bike_addr)
+
+        # Was this a healthy session (services resolved) or a pre-resolve drop?
+        # A drop before services ever resolved is the stale-bond signature.
+        was_resolved = bool(self._bikes.get(bike_addr, {}).get("char_path"))
+
         if bike_addr in self._bikes:
             self._bikes[bike_addr]["state"] = {}
             self._bikes[bike_addr]["char_path"] = None
         self._mqtt.publish_availability(bike_addr, False)
+
+        if was_resolved:
+            # Clean disconnect of a working connection — not a failure.
+            self._connect_fails[bike_addr] = 0
+        else:
+            self._connect_fails[bike_addr] = self._connect_fails.get(bike_addr, 0) + 1
+            n = self._connect_fails[bike_addr]
+            log.warning(
+                "Pre-resolve disconnect for %s (%d/%d) — possible stale bond",
+                bike_addr, n, STALE_BOND_THRESHOLD,
+            )
+            if n >= STALE_BOND_THRESHOLD:
+                self._remove_bond(bike_addr)
 
         # Ensure the named advert is live again after a disconnect.
         self._readvertise()
