@@ -156,6 +156,12 @@ All 13 entities appear automatically under **Settings → Devices & Services →
 
 **When the bike is off or out of range**, all entities keep their last known values — speed, battery %, odometer, etc. remain visible in HA dashboards and automations. The **Connected** binary sensor is the explicit online/offline indicator. State values are published as retained MQTT messages so they survive HA and Pi reboots.
 
+A separate **Bosch eBike Bridge** device exposes a **Bridge** connectivity binary
+sensor (`binary_sensor.bridge`). It is **on** while the Pi bridge is running and
+flips to **off** automatically — via an MQTT Last Will message — if the Pi loses
+power, crashes, or drops off the network. Use it to alert when the bridge itself
+goes down (independent of whether any bike is connected).
+
 ---
 
 ## Service management

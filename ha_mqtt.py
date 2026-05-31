@@ -55,6 +55,9 @@ class HaMqttPublisher:
     ) -> None:
         self._base = base_topic.rstrip("/")
         self._discovered: set[str] = set()
+        # Topic the broker watches for the bridge's own online/offline state.
+        self._bridge_avail_topic = f"{self._base}/bridge/availability"
+        self._bridge_discovered = False
 
         self._client = mqtt.Client(
             client_id="bosch-ebike-bridge",
@@ -63,6 +66,13 @@ class HaMqttPublisher:
         )
         if username:
             self._client.username_pw_set(username, password)
+
+        # Last Will & Testament: if the bridge dies (power loss, crash, network
+        # drop) the broker publishes "offline" on our behalf, so Home Assistant
+        # sees the Bridge connectivity sensor flip to "off" automatically.
+        self._client.will_set(
+            self._bridge_avail_topic, payload="offline", qos=1, retain=True
+        )
 
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
@@ -76,6 +86,12 @@ class HaMqttPublisher:
             log.info("MQTT connected")
             # Re-publish discovery for all known bikes after reconnect
             self._discovered.clear()
+            self._bridge_discovered = False
+            # Announce the bridge itself as online (counterpart to the LWT).
+            self.publish_bridge_discovery()
+            self._client.publish(
+                self._bridge_avail_topic, "online", qos=1, retain=True
+            )
         else:
             log.error("MQTT connect failed (rc=%d)", rc)
 
@@ -84,6 +100,41 @@ class HaMqttPublisher:
             log.warning("MQTT disconnected unexpectedly (rc=%d), will retry", rc)
 
     # ── Public API ────────────────────────────────────────────────────────────
+
+    def publish_bridge_discovery(self) -> None:
+        """Publish HA discovery for the bridge's own connectivity sensor.
+
+        Backed by the LWT availability topic: ON while the bridge is running,
+        OFF (via the broker's will message) if it loses power, crashes, or drops
+        off the network. Lives under its own HA device so it groups separately
+        from the bikes.
+        """
+        if self._bridge_discovered:
+            return
+        self._bridge_discovered = True
+
+        unique_id = "bosch_ebike_bridge_online"
+        payload = {
+            "name": "Bridge",
+            "unique_id": unique_id,
+            # The availability topic IS the state: 'online' → ON, 'offline' → OFF.
+            "state_topic": self._bridge_avail_topic,
+            "payload_on": "online",
+            "payload_off": "offline",
+            "device_class": "connectivity",
+            "device": {
+                "identifiers": ["bosch_ebike_pi_bridge"],
+                "name": "Bosch eBike Bridge",
+                "manufacturer": "Raspberry Pi",
+                "model": "BLE → MQTT bridge",
+            },
+        }
+        self._client.publish(
+            f"homeassistant/binary_sensor/{unique_id}/config",
+            json.dumps(payload),
+            retain=True,
+        )
+        log.info("Published HA discovery for bridge connectivity sensor")
 
     def publish_discovery(self, bike_id: str, bike_name: str) -> None:
         """Publish HA MQTT discovery config for all entities of one bike.
@@ -177,5 +228,13 @@ class HaMqttPublisher:
         )
 
     def stop(self) -> None:
+        # Mark the bridge offline on a clean shutdown (systemctl stop / restart)
+        # so HA reflects it immediately rather than waiting for the LWT timeout.
+        try:
+            self._client.publish(
+                self._bridge_avail_topic, "offline", qos=1, retain=True
+            ).wait_for_publish(timeout=2)
+        except Exception:
+            pass
         self._client.loop_stop()
         self._client.disconnect()
