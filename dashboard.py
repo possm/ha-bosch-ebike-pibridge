@@ -45,6 +45,20 @@ HTML = """<!DOCTYPE html>
     header h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.5px; }
     header p  { color: #8b949e; font-size: 0.85rem; margin-top: 4px; }
 
+    .bridge-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      font-size: 0.75rem;
+      color: #8b949e;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 20px;
+      padding: 4px 12px;
+    }
+    .bridge-status .status-dot { width: 8px; height: 8px; }
+
     #bikes {
       display: flex;
       gap: 20px;
@@ -175,6 +189,9 @@ HTML = """<!DOCTYPE html>
   <header>
     <h1>🚲 eBike Dashboard</h1>
     <p>Live data via Bluetooth · updates in real time</p>
+    <div id="bridge-status" class="bridge-status">
+      <span class="status-dot"></span><span class="bridge-label">Bridge</span>
+    </div>
   </header>
   <div id="bikes">
     <div class="waiting">
@@ -229,7 +246,18 @@ HTML = """<!DOCTYPE html>
     }, 10000);
 
     function render() {
-      const slugs = Object.keys(state);
+      // The bridge's own connectivity is shown as a small header indicator,
+      // not a bike card.
+      const bridge = state["bridge"];
+      if (bridge) {
+        const bs = document.getElementById("bridge-status");
+        const dot = bs.querySelector(".status-dot");
+        const lbl = bs.querySelector(".bridge-label");
+        dot.classList.toggle("online", !!bridge.available);
+        lbl.textContent = bridge.available ? "Bridge online" : "Bridge offline";
+      }
+
+      const slugs = Object.keys(state).filter(s => s !== "bridge");
       const el = document.getElementById("bikes");
       if (slugs.length === 0) return;
 
