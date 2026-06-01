@@ -35,9 +35,23 @@ HTML = """<!DOCTYPE html>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    :root {
+      --accent: #00a8b5;          /* Bosch eBike turquoise */
+      --accent-glow: #00cdd6;
+      --bg: #0a0f14;
+      --bg2: #0e151c;
+      --card: #121a22;
+      --card2: #0c1218;
+      --line: #1e2a35;
+      --text: #eef3f6;
+      --muted: #7d8d99;
+    }
+
     body {
-      background: #0d1117;
-      color: #e6edf3;
+      background:
+        radial-gradient(1200px 600px at 50% -10%, #10303a 0%, rgba(16,48,58,0) 60%),
+        var(--bg);
+      color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       min-height: 100vh;
       padding: 24px 16px;
@@ -59,17 +73,17 @@ HTML = """<!DOCTYPE html>
       box-shadow: 0 2px 8px rgba(0,0,0,0.4);
     }
     header h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.5px; }
-    header p  { color: #8b949e; font-size: 0.85rem; margin-top: 4px; }
+    header p  { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
 
     .bridge-status {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      margin-top: 10px;
+      margin-top: 12px;
       font-size: 0.75rem;
-      color: #8b949e;
-      background: #161b22;
-      border: 1px solid #30363d;
+      color: var(--muted);
+      background: var(--card);
+      border: 1px solid var(--line);
       border-radius: 20px;
       padding: 4px 12px;
     }
@@ -85,20 +99,21 @@ HTML = """<!DOCTYPE html>
     }
 
     .bike-card {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 14px;
+      background: linear-gradient(160deg, var(--card) 0%, var(--card2) 100%);
+      border: 1px solid var(--line);
+      border-radius: 18px;
       padding: 24px;
       flex: 1;
       min-width: 280px;
       max-width: 420px;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.35);
       transition: opacity 0.4s;
     }
-    .bike-card.offline { opacity: 0.6; }
+    .bike-card.offline { opacity: 0.55; }
 
     .last-seen {
       font-size: 0.72rem;
-      color: #8b949e;
+      color: var(--muted);
       text-align: center;
       margin-top: 14px;
       font-style: italic;
@@ -116,33 +131,35 @@ HTML = """<!DOCTYPE html>
       background: #f85149;
       flex-shrink: 0;
     }
-    .status-dot.online { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
+    .status-dot.online { background: var(--accent-glow); box-shadow: 0 0 8px var(--accent-glow); }
     .bike-name { font-size: 1.1rem; font-weight: 600; }
-    .bike-status { font-size: 0.75rem; color: #8b949e; margin-left: auto; }
+    .bike-status { font-size: 0.75rem; color: var(--muted); margin-left: auto; text-transform: uppercase; letter-spacing: 0.5px; }
 
     .speed-block {
       text-align: center;
       padding: 16px 0 20px;
     }
     .speed-value {
-      font-size: 5rem;
+      font-size: 5.2rem;
       font-weight: 800;
       line-height: 1;
-      color: #58a6ff;
+      color: var(--accent-glow);
+      text-shadow: 0 0 24px rgba(0,205,214,0.35);
       font-variant-numeric: tabular-nums;
     }
-    .speed-unit { font-size: 1.2rem; color: #8b949e; margin-top: 4px; }
+    .speed-unit { font-size: 1.1rem; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 1px; }
 
     .battery-section { margin-bottom: 20px; }
     .battery-label {
       display: flex;
       justify-content: space-between;
       font-size: 0.8rem;
-      color: #8b949e;
+      color: var(--muted);
       margin-bottom: 6px;
     }
     .battery-track {
-      background: #21262d;
+      background: var(--card2);
+      border: 1px solid var(--line);
       border-radius: 6px;
       height: 14px;
       overflow: hidden;
@@ -160,8 +177,9 @@ HTML = """<!DOCTYPE html>
       margin-bottom: 20px;
     }
     .metric {
-      background: #0d1117;
-      border-radius: 10px;
+      background: var(--card2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
       padding: 12px;
       text-align: center;
     }
@@ -170,7 +188,7 @@ HTML = """<!DOCTYPE html>
       font-weight: 700;
       font-variant-numeric: tabular-nums;
     }
-    .metric-label { font-size: 0.7rem; color: #8b949e; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .metric-label { font-size: 0.7rem; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
 
     .sensors {
       display: flex;
@@ -181,19 +199,20 @@ HTML = """<!DOCTYPE html>
       display: flex;
       align-items: center;
       gap: 5px;
-      background: #21262d;
+      background: var(--card2);
+      border: 1px solid var(--line);
       border-radius: 20px;
       padding: 5px 12px;
       font-size: 0.78rem;
-      color: #8b949e;
+      color: var(--muted);
       transition: background 0.3s, color 0.3s;
     }
-    .sensor.on  { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb55; }
+    .sensor.on  { background: rgba(0,168,181,0.18); color: var(--accent-glow); border: 1px solid rgba(0,205,214,0.4); }
     .sensor.warn { background: #d2992233; color: #d29922; border: 1px solid #d2992255; }
 
     .waiting {
       text-align: center;
-      color: #8b949e;
+      color: var(--muted);
       padding: 80px 0;
       width: 100%;
     }
