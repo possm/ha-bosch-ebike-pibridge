@@ -213,6 +213,92 @@ sudo systemctl restart bosch-ebike-bridge bosch-ebike-dashboard
 
 ---
 
+## Smart charging
+
+The bridge's `Battery SoC` and `Charger Connected` sensors, combined with a
+smart plug controlling the charger, let Home Assistant do smart charging —
+either a simple 80% limit, or price-based scheduling via
+[EV Smart Charging](https://github.com/jonasbkarlsson/ev_smart_charging)
+(Tibber, Nord Pool, etc.).
+
+> ⚠️ These examples assume `Charger Connected` reflects an **active charging
+> session** (power flowing), not mere cable presence. This is likely but not yet
+> confirmed across firmware versions — verify on your own bike first (watch the
+> sensor while toggling the plug).
+
+**You need:** this bridge in HA · a smart plug for the charger · a price
+integration · EV Smart Charging (HACS).
+
+### Find your entity IDs
+
+Entities are named `bosch_ebike_<bike>_<field>`. Look them up under
+**Settings → Devices & Services → MQTT → your bike**. You'll need:
+- `binary_sensor.bosch_ebike_<bike>_charger_connected` — note: a **binary_sensor**, state `on`/`off`
+- `sensor.bosch_ebike_<bike>_battery_soc`
+
+### 1. Target SOC helper
+
+```yaml
+input_number:
+  ebike_target_soc:
+    name: "eBike target SOC"
+    min: 20
+    max: 100
+    step: 5
+    unit_of_measurement: "%"
+    icon: mdi:battery-charging
+```
+
+### 2. "eBike connected" template sensor
+
+EV Smart Charging needs a "vehicle connected" signal. But when it pauses by
+switching the plug **off**, `Charger Connected` also goes **off** — which would
+look like the bike was unplugged. This template keeps "connected" true whenever
+the plug is off (paused) or the charger is actively reporting:
+
+```yaml
+template:
+  - binary_sensor:
+      - name: "eBike connected"
+        device_class: plug
+        state: >
+          {% set plug = states('switch.YOUR_SMART_PLUG') %}
+          {% set chg  = states('binary_sensor.bosch_ebike_YOURBIKE_charger_connected') %}
+          {% if plug in ['unavailable', 'unknown'] or chg in ['unavailable', 'unknown'] %}
+            true
+          {% elif plug == 'off' %}
+            true
+          {% elif chg == 'on' %}
+            true
+          {% else %}
+            false
+          {% endif %}
+```
+
+Replace `switch.YOUR_SMART_PLUG` and the `..._charger_connected` entity with
+your real IDs.
+
+| Plug | Charger Connected | "eBike connected" |
+|------|-------------------|-------------------|
+| off  | any   | **on** — paused, can still schedule |
+| on   | on    | **on** — actively charging |
+| on   | off   | **off** — bike not plugged in |
+| unavailable | any | **on** — safe default during restarts |
+
+### Configure EV Smart Charging
+
+Settings → Devices & Services → **EV Smart Charging** → Add entry:
+
+| Field | Entity |
+|-------|--------|
+| Price sensor | your Tibber / Nord Pool sensor |
+| SOC sensor | `sensor.bosch_ebike_YOURBIKE_battery_soc` |
+| Charger switch | `switch.YOUR_SMART_PLUG` |
+| EV connected | `binary_sensor.ebike_connected` (template above) |
+| Target SOC | `input_number.ebike_target_soc` |
+
+---
+
 ## Credits
 
 Inspired by [ha-bosch-ebike](https://github.com/Xunil99/ha-bosch-ebike) by [Xunil99](https://github.com/Xunil99) — great work on reverse-engineering the Bosch LDI protocol. I didn't have a spare ESP32 lying around, so I took the same idea and built a Python version that runs straight on a Raspberry Pi instead.
