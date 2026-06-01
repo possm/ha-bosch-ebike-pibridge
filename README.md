@@ -166,6 +166,19 @@ flips to **off** automatically — via an MQTT Last Will message — if the Pi l
 power, crashes, or drops off the network. Use it to alert when the bridge itself
 goes down (independent of whether any bike is connected).
 
+### Note on `Charger Connected` (smart-charging automations)
+
+`Charger Connected` reflects the Bosch LDI's raw charger field. On Bosch systems
+this appears to track an **active charging session** rather than mere cable
+presence — so if an automation cuts power via a smart plug, this sensor may flip
+to **off** even though the cable is still physically plugged in. Verify the exact
+behaviour on your own bike before building charging automations around it.
+
+The bridge only sees the bike over Bluetooth — it has **no knowledge of smart-plug
+state**. So any "is power flowing?" vs "is the cable in?" logic, and an 80%
+charge-limit (cut the plug when `Battery SoC` ≥ 80%), must live in Home Assistant,
+not the bridge.
+
 ---
 
 ## Service management
