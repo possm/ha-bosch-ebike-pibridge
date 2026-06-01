@@ -30,7 +30,10 @@ BINARY_SENSOR_DEFS: list[tuple] = [
     ("connected",          "Connected",         "connectivity", None),
     ("bike_light",         "Light",             "light",        None),
     ("system_locked",      "System Locked",     "lock",         None),
-    ("charger_connected",  "Charger Connected", "plug",         None),
+    # device_class battery_charging → HA shows "Charging"/"Not charging".
+    # The LDI field is true only during an active charging session, so this
+    # matches the dashboard's "Charging" chip (not mere cable presence).
+    ("charger_connected",  "Charging",          "battery_charging", None),
     ("light_reserve",      "Light Reserve",     "battery",      None),
     ("diagnosis_active",   "Diagnosis Active",  "problem",      None),
     ("in_motion",          "In Motion",         "moving",       None),
