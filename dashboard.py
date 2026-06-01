@@ -205,7 +205,6 @@ HTML = """<!DOCTYPE html>
   <header>
     <img src="/logo.png" alt="Bosch eBike Systems" class="logo"
          onerror="this.style.display='none'">
-    <h1>🚲 eBike Dashboard</h1>
     <p>Live data via Bluetooth · updates in real time</p>
     <div id="bridge-status" class="bridge-status">
       <span class="status-dot"></span><span class="bridge-label">Bridge</span>
