@@ -47,7 +47,17 @@ HTML = """<!DOCTYPE html>
       text-align: center;
       margin-bottom: 32px;
     }
-    header .logo { width: 200px; max-width: 70%; height: auto; margin-bottom: 14px; }
+    /* The Bosch logo is designed for a white background, so present it on a
+       small white rounded panel rather than letting its white show as a hard
+       edge on the dark UI. */
+    header .logo {
+      width: 220px; max-width: 70%; height: auto;
+      background: #fff;
+      padding: 10px 16px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
     header h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.5px; }
     header p  { color: #8b949e; font-size: 0.85rem; margin-top: 4px; }
 
