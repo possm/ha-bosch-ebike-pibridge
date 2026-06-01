@@ -153,7 +153,7 @@ All 13 entities appear automatically under **Settings → Devices & Services →
 | Connected | Binary sensor | — |
 | Light | Binary sensor | — |
 | System Locked | Binary sensor | — |
-| Charger Connected | Binary sensor | — |
+| Charging | Binary sensor | — |
 | Light Reserve | Binary sensor | — |
 | Diagnosis Active | Binary sensor | — |
 | In Motion | Binary sensor | — |
@@ -166,13 +166,15 @@ flips to **off** automatically — via an MQTT Last Will message — if the Pi l
 power, crashes, or drops off the network. Use it to alert when the bridge itself
 goes down (independent of whether any bike is connected).
 
-### Note on `Charger Connected` (smart-charging automations)
+### Note on the `Charging` sensor (smart-charging automations)
 
-`Charger Connected` reflects the Bosch LDI's raw charger field, which tracks an
-**active charging session** (power flowing) rather than mere cable presence
-(confirmed on a Bosch smart system bike). So if an automation cuts power via a
-smart plug, this sensor flips to **off** even though the cable is still
-physically plugged in — keep that in mind when building charging automations.
+The **Charging** sensor (entity `binary_sensor.bosch_ebike_<bike>_charger_connected`)
+reflects the Bosch LDI's raw charger field, which tracks an **active charging
+session** (power flowing) rather than mere cable presence — hence the
+`battery_charging` device class showing *Charging* / *Not charging* (confirmed on
+a Bosch smart system bike). So if an automation cuts power via a smart plug, this
+sensor flips to **off** even though the cable is still physically plugged in —
+keep that in mind when building charging automations.
 
 The bridge only sees the bike over Bluetooth — it has **no knowledge of smart-plug
 state**. So any "is power flowing?" vs "is the cable in?" logic, and an 80%
@@ -215,13 +217,13 @@ sudo systemctl restart bosch-ebike-bridge bosch-ebike-dashboard
 
 ## Smart charging
 
-The bridge's `Battery SoC` and `Charger Connected` sensors, combined with a
+The bridge's `Battery SoC` and `Charging` sensors, combined with a
 smart plug controlling the charger, let Home Assistant do smart charging —
 either a simple 80% limit, or price-based scheduling via
 [EV Smart Charging](https://github.com/jonasbkarlsson/ev_smart_charging)
 (Tibber, Nord Pool, etc.).
 
-> **Note:** `Charger Connected` reflects an **active charging session** (power
+> **Note:** the `Charging` sensor reflects an **active charging session** (power
 > flowing), not mere cable presence — so it goes **off** when a smart plug cuts
 > power even with the cable still plugged in. The template sensor below accounts
 > for this.
@@ -252,7 +254,7 @@ input_number:
 ### 2. "eBike connected" template sensor
 
 EV Smart Charging needs a "vehicle connected" signal. But when it pauses by
-switching the plug **off**, `Charger Connected` also goes **off** — which would
+switching the plug **off**, the `Charging` sensor also goes **off** — which would
 look like the bike was unplugged. This template keeps "connected" true whenever
 the plug is off (paused) or the charger is actively reporting:
 
@@ -278,8 +280,8 @@ template:
 Replace `switch.YOUR_SMART_PLUG` and the `..._charger_connected` entity with
 your real IDs.
 
-| Plug | Charger Connected | "eBike connected" |
-|------|-------------------|-------------------|
+| Plug | Charging | "eBike connected" |
+|------|----------|-------------------|
 | off  | any   | **on** — paused, can still schedule |
 | on   | on    | **on** — actively charging |
 | on   | off   | **off** — bike not plugged in |
