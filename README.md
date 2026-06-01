@@ -168,11 +168,11 @@ goes down (independent of whether any bike is connected).
 
 ### Note on `Charger Connected` (smart-charging automations)
 
-`Charger Connected` reflects the Bosch LDI's raw charger field. On Bosch systems
-this appears to track an **active charging session** rather than mere cable
-presence — so if an automation cuts power via a smart plug, this sensor may flip
-to **off** even though the cable is still physically plugged in. Verify the exact
-behaviour on your own bike before building charging automations around it.
+`Charger Connected` reflects the Bosch LDI's raw charger field, which tracks an
+**active charging session** (power flowing) rather than mere cable presence
+(confirmed on a Bosch smart system bike). So if an automation cuts power via a
+smart plug, this sensor flips to **off** even though the cable is still
+physically plugged in — keep that in mind when building charging automations.
 
 The bridge only sees the bike over Bluetooth — it has **no knowledge of smart-plug
 state**. So any "is power flowing?" vs "is the cable in?" logic, and an 80%
@@ -221,10 +221,10 @@ either a simple 80% limit, or price-based scheduling via
 [EV Smart Charging](https://github.com/jonasbkarlsson/ev_smart_charging)
 (Tibber, Nord Pool, etc.).
 
-> ⚠️ These examples assume `Charger Connected` reflects an **active charging
-> session** (power flowing), not mere cable presence. This is likely but not yet
-> confirmed across firmware versions — verify on your own bike first (watch the
-> sensor while toggling the plug).
+> **Note:** `Charger Connected` reflects an **active charging session** (power
+> flowing), not mere cable presence — so it goes **off** when a smart plug cuts
+> power even with the cable still plugged in. The template sensor below accounts
+> for this.
 
 **You need:** this bridge in HA · a smart plug for the charger · a price
 integration · EV Smart Charging (HACS).
