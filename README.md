@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/BOSCH-EBIKE-SYSTEMS.png" alt="Bosch eBike Systems" width="420">
+</p>
+
 # ha-bosch-ebike-pibridge
 
 Raspberry Pi BLE → Home Assistant / MQTT bridge for the **Bosch eBike Live Data Interface (LDI)**.
