@@ -601,6 +601,14 @@ class EbikeBridge:
         self._setup_adapter(adapter_path)
         self._register_agent()
         self._adv = self._register_advertisement(adapter_path)
+
+        # Publish discovery for every configured bike up front, so their HA
+        # entities (incl. the corrected 'connected' sensor) register even while
+        # the bike is offline. Mark them offline until they actually connect.
+        for addr, bike in self._bikes.items():
+            self._mqtt.publish_discovery(addr, bike["name"])
+            self._mqtt.publish_availability(addr, False)
+
         self._monitor()
 
         def _shutdown(signum, frame) -> None:

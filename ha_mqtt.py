@@ -183,19 +183,32 @@ class HaMqttPublisher:
 
         for key, name, dev_class, icon in BINARY_SENSOR_DEFS:
             unique_id = f"bosch_ebike_{slug}_{key}"
-            payload = {
-                "name": name,
-                "unique_id": unique_id,
-                "state_topic": state_topic,
-                "value_template": (
-                    "{{ 'ON' if value_json." + key + " else 'OFF' }}"
-                ),
-                # Only the 'connected' sensor gets an availability topic so
-                # it can properly reflect offline state. All others show last
-                # known values when the bike is disconnected.
-                **({"availability_topic": avail_topic} if key == "connected" else {}),
-                "device": device,
-            }
+
+            if key == "connected":
+                # The 'connected' sensor reflects the bike's BLE connection,
+                # which is tracked via the availability topic (online/offline) —
+                # NOT a field in the state JSON (the decoder never emits a
+                # 'connected' key). Drive the sensor straight from that topic.
+                payload = {
+                    "name": name,
+                    "unique_id": unique_id,
+                    "state_topic": avail_topic,
+                    "payload_on": "online",
+                    "payload_off": "offline",
+                    "device": device,
+                }
+            else:
+                payload = {
+                    "name": name,
+                    "unique_id": unique_id,
+                    "state_topic": state_topic,
+                    "value_template": (
+                        "{{ 'ON' if value_json." + key + " else 'OFF' }}"
+                    ),
+                    # No availability_topic: these keep their last known value
+                    # when the bike is off.
+                    "device": device,
+                }
             if dev_class:
                 payload["device_class"] = dev_class
             if icon:
