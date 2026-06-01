@@ -11,13 +11,18 @@ no page reloads. Works in any modern browser, including phones.
 from __future__ import annotations
 
 import json
+import os
 import queue
 import sys
 import threading
 import time
 import yaml
-from flask import Flask, Response, render_template_string
+from flask import Flask, Response, render_template_string, send_file, abort
 import paho.mqtt.client as mqtt
+
+# Logo lives next to this script (and is copied there by install.sh).
+LOGO_FILENAME = "BOSCH-EBIKE-SYSTEMS.png"
+LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), LOGO_FILENAME)
 
 # ── HTML template ─────────────────────────────────────────────────────────────
 
@@ -42,6 +47,7 @@ HTML = """<!DOCTYPE html>
       text-align: center;
       margin-bottom: 32px;
     }
+    header .logo { width: 200px; max-width: 70%; height: auto; margin-bottom: 14px; }
     header h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.5px; }
     header p  { color: #8b949e; font-size: 0.85rem; margin-top: 4px; }
 
@@ -187,6 +193,8 @@ HTML = """<!DOCTYPE html>
 </head>
 <body>
   <header>
+    <img src="/logo.png" alt="Bosch eBike Systems" class="logo"
+         onerror="this.style.display='none'">
     <h1>🚲 eBike Dashboard</h1>
     <p>Live data via Bluetooth · updates in real time</p>
     <div id="bridge-status" class="bridge-status">
@@ -411,6 +419,14 @@ def _start_mqtt(config: dict, name_map: dict[str, str]) -> None:
 @app.route("/")
 def index():
     return render_template_string(HTML)
+
+
+@app.route("/logo.png")
+def logo():
+    """Serve the Bosch eBike Systems logo shown in the dashboard header."""
+    if not os.path.isfile(LOGO_PATH):
+        abort(404)
+    return send_file(LOGO_PATH, mimetype="image/png")
 
 
 @app.route("/stream")

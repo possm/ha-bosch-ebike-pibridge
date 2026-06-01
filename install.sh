@@ -38,6 +38,8 @@ cp "$SCRIPT_DIR/bridge.py"    "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/livedata.py"  "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/ha_mqtt.py"   "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/dashboard.py" "$INSTALL_DIR/"
+# Logo shown in the dashboard header (served via /logo.png).
+cp "$SCRIPT_DIR/docs/BOSCH-EBIKE-SYSTEMS.png" "$INSTALL_DIR/" 2>/dev/null || true
 
 if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
     cp "$SCRIPT_DIR/config.yaml" "$CONFIG_DIR/config.yaml"
