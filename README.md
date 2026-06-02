@@ -140,7 +140,7 @@ Open **http://e-bike-bridge.local:8080** in any browser (phone, tablet, laptop).
 
 ## Entities in Home Assistant
 
-All 13 entities appear automatically under **Settings → Devices & Services → MQTT**:
+All 15 entities appear automatically under **Settings → Devices & Services → MQTT**:
 
 | Entity | Type | Unit |
 |---|---|---|
@@ -150,6 +150,8 @@ All 13 entities appear automatically under **Settings → Devices & Services →
 | Ambient Brightness | Sensor | lx |
 | Battery SoC | Sensor | % |
 | Odometer | Sensor | km |
+| Charge Time to 80% | Sensor | min |
+| Charge Time to 100% | Sensor | min |
 | Connected | Binary sensor | — |
 | Light | Binary sensor | — |
 | System Locked | Binary sensor | — |
@@ -159,6 +161,12 @@ All 13 entities appear automatically under **Settings → Devices & Services →
 | In Motion | Binary sensor | — |
 
 **When the bike is off or out of range**, all entities keep their last known values — speed, battery %, odometer, etc. remain visible in HA dashboards and automations. The **Connected** binary sensor is the explicit online/offline indicator. State values are published as retained MQTT messages so they survive HA and Pi reboots.
+
+The **Charge Time to 80% / 100%** sensors are estimates derived from the rising
+SoC while charging (rate measured live, with a slowdown factor for the CV phase
+above 85%). They read *unknown* until a reliable charging rate has built up, and
+whenever the bike isn't charging. The 80% figure is the more accurate of the two
+(the whole region up to 80% charges at a roughly constant rate).
 
 A separate **Bosch eBike Bridge** device exposes a **Bridge** connectivity binary
 sensor (`binary_sensor.bridge`). It is **on** while the Pi bridge is running and
