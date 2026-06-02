@@ -23,6 +23,8 @@ SENSOR_DEFS: list[tuple] = [
     ("ambient_lux",  "Ambient Brightness", "lx",   "illuminance",  "measurement",      None),
     ("battery_soc",  "Battery SoC",        "%",    "battery",      "measurement",      None),
     ("odometer_km",  "Odometer",           "km",   "distance",     "total_increasing", None),
+    ("charge_eta_80_min",  "Charge Time to 80%",  "min", "duration", "measurement", "mdi:battery-charging-80"),
+    ("charge_eta_100_min", "Charge Time to 100%", "min", "duration", "measurement", "mdi:battery-charging-100"),
 ]
 
 # (state_key, friendly_name, device_class, icon)
@@ -165,7 +167,13 @@ class HaMqttPublisher:
                 "name": name,
                 "unique_id": unique_id,
                 "state_topic": state_topic,
-                "value_template": "{{ value_json." + key + " | default('') }}",
+                # Render a missing OR null value as '' so HA shows "unknown"
+                # rather than the literal string "None" (the charge-ETA fields
+                # are null whenever the bike isn't charging).
+                "value_template": (
+                    "{% set v = value_json." + key + " %}"
+                    "{{ v if v is not none else '' }}"
+                ),
                 "unit_of_measurement": unit,
                 # No availability_topic: sensors keep their last known value
                 # when the bike is off. The 'connected' binary sensor is the

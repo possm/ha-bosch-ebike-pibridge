@@ -32,7 +32,7 @@ import dbus.service
 import dbus.mainloop.glib
 from gi.repository import GLib
 
-from livedata import decode_live_data
+from livedata import decode_live_data, ChargeEstimator
 from ha_mqtt import HaMqttPublisher
 
 log = logging.getLogger(__name__)
@@ -465,6 +465,24 @@ class EbikeBridge:
 
         bike = self._bikes[bike_addr]
         bike["state"].update(data)   # merge sparse notification into running state
+
+        # ── Charge-time estimation ─────────────────────────────────────────
+        est = bike.setdefault("charge_est", ChargeEstimator())
+        # Reset the estimate whenever the charging flag flips (plug/unplug),
+        # so a fresh session re-seeds the reference point.
+        if "charger_connected" in data:
+            prev = bike.get("_was_charging")
+            if prev is not None and data["charger_connected"] != prev:
+                est.reset()
+            bike["_was_charging"] = data["charger_connected"]
+        charging = bool(bike["state"].get("charger_connected"))
+        soc = bike["state"].get("battery_soc")
+        soc = float(soc) if soc is not None else None
+        est.update(soc, charging)
+        # Always (re)publish the two ETA fields so they clear to null when not
+        # charging. JSON null → HA template '' default → entity shows unknown.
+        bike["state"]["charge_eta_80_min"] = est.eta_to(soc, charging, 80.0)
+        bike["state"]["charge_eta_100_min"] = est.eta_to(soc, charging, 100.0)
 
         self._mqtt.publish_discovery(bike_addr, bike["name"])
         self._mqtt.publish_state(bike_addr, bike["state"])

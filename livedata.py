@@ -7,6 +7,75 @@ Unknown fields are silently skipped per proto3 forward-compatibility rules.
 """
 from __future__ import annotations
 import struct
+import time
+
+
+class ChargeEstimator:
+    """Estimates remaining charge time to 80% and 100% from rising SoC.
+
+    Ported from the upstream ESPHome bridge (feat: Restladezeit-Schätzung).
+    While charging, it measures the charge rate (%/min) from the rising SoC,
+    smoothed with an EMA, and extrapolates:
+      • to 80%: linear (the whole CC region is roughly linear → accurate)
+      • to 100%: CC up to 85%, then the slower CV tail at rate/2.5
+
+    One instance per bike. Feed it every SoC sample via update(); call reset()
+    on each charger plug/unplug transition so a new session re-seeds cleanly.
+    """
+
+    EMA_NEW = 0.3          # weight of the newest rate sample
+    CV_START = 85.0        # %, where the slower constant-voltage phase begins
+    CV_FACTOR = 2.5        # CV charges ~this many× slower than CC
+
+    def __init__(self) -> None:
+        self._rate: float | None = None   # %/min, None = unknown
+        self._last_soc: float | None = None
+        self._last_ms: float | None = None
+
+    def reset(self) -> None:
+        """Clear the estimate — call on every charger plug/unplug."""
+        self._rate = None
+        self._last_soc = None
+        self._last_ms = None
+
+    def update(self, soc: float | None, charging: bool) -> None:
+        """Feed one SoC sample. Updates the smoothed rate once per +1% gained."""
+        if not charging or soc is None:
+            return
+        now = time.monotonic() * 1000.0  # ms, monotonic (immune to clock changes)
+        if self._last_soc is None:
+            self._last_soc = soc
+            self._last_ms = now
+            return
+        dsoc = soc - self._last_soc
+        if dsoc >= 1.0:
+            dmin = (now - self._last_ms) / 60000.0
+            if dmin > 0.01:
+                r = dsoc / dmin
+                if r > 0:
+                    self._rate = r if self._rate is None else (
+                        self.EMA_NEW * r + (1 - self.EMA_NEW) * self._rate
+                    )
+            self._last_soc = soc
+            self._last_ms = now
+
+    def eta_to(self, soc: float | None, charging: bool, target: float) -> int | None:
+        """Minutes remaining until `target`%, or None if not yet estimable."""
+        if not charging or soc is None or self._rate is None or self._rate <= 0:
+            return None
+        if soc >= target:
+            return None
+        rate = self._rate
+        if target <= self.CV_START:
+            return round((target - soc) / rate)
+        # Target above the CV knee: linear CC up to CV_START, slower CV after.
+        mins = 0.0
+        s = soc
+        if s < self.CV_START:
+            mins += (self.CV_START - s) / rate
+            s = self.CV_START
+        mins += (target - s) / (rate / self.CV_FACTOR)
+        return round(mins)
 
 
 def _read_varint(data: bytes, pos: int) -> tuple[int, int]:
