@@ -26,6 +26,10 @@ class ChargeEstimator:
     EMA_NEW = 0.3          # weight of the newest rate sample
     CV_START = 85.0        # %, where the slower constant-voltage phase begins
     CV_FACTOR = 2.5        # CV charges ~this many× slower than CC
+    MAX_RATE = 2.0         # %/min — real eBike charging is well under this;
+                           # faster implies a connect-time "catch-up" SoC jump
+    MIN_SAMPLE_MIN = 0.5   # ignore a 1% gain measured over < 30 s (not a real
+                           # rate — almost always a sync jump right after connect)
 
     def __init__(self) -> None:
         self._rate: float | None = None   # %/min, None = unknown
@@ -39,7 +43,14 @@ class ChargeEstimator:
         self._last_ms = None
 
     def update(self, soc: float | None, charging: bool) -> None:
-        """Feed one SoC sample. Updates the smoothed rate once per +1% gained."""
+        """Feed one SoC sample. Updates the smoothed rate once per +1% gained.
+
+        Guards against the bike reporting a sudden SoC "catch-up" jump in the
+        first reads after connecting (which would otherwise seed an absurdly
+        high rate): a 1% gain measured over too short a time, or implying a
+        physically implausible rate, advances the reference point but is NOT
+        used as a rate sample.
+        """
         if not charging or soc is None:
             return
         now = time.monotonic() * 1000.0  # ms, monotonic (immune to clock changes)
@@ -50,12 +61,14 @@ class ChargeEstimator:
         dsoc = soc - self._last_soc
         if dsoc >= 1.0:
             dmin = (now - self._last_ms) / 60000.0
-            if dmin > 0.01:
-                r = dsoc / dmin
-                if r > 0:
-                    self._rate = r if self._rate is None else (
-                        self.EMA_NEW * r + (1 - self.EMA_NEW) * self._rate
-                    )
+            r = dsoc / dmin if dmin > 0 else 0.0
+            # Only accept physically plausible, long-enough samples.
+            if dmin >= self.MIN_SAMPLE_MIN and 0 < r <= self.MAX_RATE:
+                self._rate = r if self._rate is None else (
+                    self.EMA_NEW * r + (1 - self.EMA_NEW) * self._rate
+                )
+            # Always advance the reference point so the next sample is measured
+            # from here (whether or not this one counted as a rate sample).
             self._last_soc = soc
             self._last_ms = now
 
