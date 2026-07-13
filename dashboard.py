@@ -218,6 +218,23 @@ HTML = """<!DOCTYPE html>
     }
     .waiting .icon { font-size: 3rem; margin-bottom: 16px; }
     .waiting p { font-size: 0.9rem; }
+
+    .pair-row { margin-top: 12px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+    .pair-btn {
+      background: var(--card);
+      color: var(--accent-glow);
+      border: 1px solid rgba(0,205,214,0.4);
+      border-radius: 20px;
+      padding: 6px 16px;
+      font-size: 0.8rem;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+    .pair-btn:hover { background: rgba(0,168,181,0.18); }
+    .pair-btn:disabled { opacity: 0.5; cursor: default; }
+    .pair-btn.active { background: rgba(0,168,181,0.25); border-color: var(--accent-glow); }
+    .pair-hint { font-size: 0.72rem; color: var(--muted); }
   </style>
 </head>
 <body>
@@ -227,6 +244,12 @@ HTML = """<!DOCTYPE html>
     <p>Live data via Bluetooth · updates in real time</p>
     <div id="bridge-status" class="bridge-status">
       <span class="status-dot"></span><span class="bridge-label">Bridge</span>
+    </div>
+    <div class="pair-row">
+      <button id="pair-btn" class="pair-btn" onclick="startPairing()">
+        🔗 Start pairing
+      </button>
+      <span id="pair-hint" class="pair-hint"></span>
     </div>
   </header>
   <div id="bikes">
@@ -242,12 +265,32 @@ HTML = """<!DOCTYPE html>
     const src = new EventSource("/stream");
     src.onmessage = (e) => {
       const d = JSON.parse(e.data);
+      if (d.slug === "_pairing") { updatePairing(d.active); return; }
       state[d.slug] = d;
       render();
     };
     src.onerror = () => {
       document.querySelector("header p").textContent = "⚠ Connection to Pi lost — retrying…";
     };
+
+    function updatePairing(active) {
+      const btn = document.getElementById("pair-btn");
+      const hint = document.getElementById("pair-hint");
+      btn.classList.toggle("active", !!active);
+      hint.textContent = active ? "Pairing window open — add the bike in the Flow app" : "";
+    }
+
+    async function startPairing() {
+      const btn = document.getElementById("pair-btn");
+      btn.disabled = true;
+      try {
+        await fetch("/pair", { method: "POST" });
+        document.getElementById("pair-hint").textContent = "Pairing window opening…";
+      } catch (e) {
+        document.getElementById("pair-hint").textContent = "Failed to reach the bridge";
+      }
+      setTimeout(() => { btn.disabled = false; }, 2000);
+    }
 
     function batteryColor(pct) {
       if (pct >= 50) return "#3fb950";
@@ -378,6 +421,11 @@ _state: dict[str, dict] = {}   # slug → {name, available, data}
 _lock = threading.Lock()
 _subscribers: list[queue.Queue] = []
 
+# Set by _start_mqtt so the /pair route can publish the pairing command.
+_mqtt_client = None
+_base_topic = "bosch_ebike"
+_pairing_active = False        # last-seen pairing-window state
+
 
 def _push(payload: str) -> None:
     """Push a JSON string to all connected SSE clients."""
@@ -405,11 +453,21 @@ def _start_mqtt(config: dict, name_map: dict[str, str]) -> None:
     if mqtt_cfg.get("username"):
         client.username_pw_set(mqtt_cfg["username"], mqtt_cfg.get("password"))
 
+    pairing_state_topic = f"{base}/bridge/pairing/state"
+
     def on_connect(c, *_):
         c.subscribe(f"{base}/+/state")
         c.subscribe(f"{base}/+/availability")
+        c.subscribe(pairing_state_topic)
 
     def on_message(c, userdata, msg):
+        global _pairing_active
+        # Pairing-window state → push to clients so the button reflects it.
+        if msg.topic == pairing_state_topic:
+            _pairing_active = (msg.payload.decode() == "on")
+            _push(json.dumps({"slug": "_pairing", "active": _pairing_active}))
+            return
+
         parts = msg.topic.split("/")
         if len(parts) < 3:
             return
@@ -441,12 +499,29 @@ def _start_mqtt(config: dict, name_map: dict[str, str]) -> None:
     client.connect_async(mqtt_cfg["broker"], int(mqtt_cfg.get("port", 1883)))
     client.loop_start()
 
+    global _mqtt_client, _base_topic
+    _mqtt_client = client
+    _base_topic = base
+
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
     return render_template_string(HTML)
+
+
+@app.route("/pair", methods=["POST"])
+def pair():
+    """Open the bridge's pairing window by publishing the pairing command.
+
+    This is the same command topic the Home Assistant 'Start pairing' button
+    uses, so the dashboard button and the HA button do exactly the same thing.
+    """
+    if _mqtt_client is None:
+        return ("MQTT not ready", 503)
+    _mqtt_client.publish(f"{_base_topic}/bridge/pairing/set", "PRESS")
+    return ("", 204)
 
 
 @app.route("/logo.png")
@@ -468,6 +543,8 @@ def stream():
         with _lock:
             for bike in _state.values():
                 yield f"data: {json.dumps(bike)}\n\n"
+        # And the current pairing-window state, so the button reflects reality.
+        yield f"data: {json.dumps({'slug': '_pairing', 'active': _pairing_active})}\n\n"
 
         try:
             while True:
