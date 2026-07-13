@@ -131,17 +131,20 @@ range of the Pi.
 
 ## Privacy
 
-By default the bridge only broadcasts the Bosch LDI solicitation (the signal a Flow app looks for to add a new accessory) during a **5 minute pairing window**. The window opens automatically after each boot, and on demand via the **Start pairing** button in Home Assistant.
+By default the bridge only broadcasts the Bosch LDI solicitation (the signal a Flow app looks for to add a new accessory) during a **5 minute pairing window**.
 
 Outside the window the bridge advertises privately: name only, not discoverable, and without the solicitation. This means:
 
 - Other people nearby with the Flow app cannot see or try to add your bridge.
 - Your already bonded bikes still reconnect automatically, because a bonded bike reconnects by its stored bond, not by the solicitation. Verified on hardware.
 
-Home Assistant gets two extra controls on the **Bosch eBike Bridge** device:
+**Opening the pairing window.** Any of these opens it for 5 minutes:
 
-- **Start pairing** (button): reopens the 5 minute pairing window.
-- **Pairing active** (binary sensor): on while the window is open.
+- The bridge boots (the window opens automatically on every startup).
+- The **Start pairing** button on the web dashboard.
+- The **Start pairing** button in Home Assistant (see [Entities in Home Assistant](#entities-in-home-assistant)).
+
+While the window is open, the web dashboard button highlights and the **Pairing active** sensor in Home Assistant is on.
 
 To keep the old always discoverable behaviour, set `private_advertising: false` in `config.yaml`.
 
@@ -151,11 +154,12 @@ To keep the old always discoverable behaviour, set `private_advertising: false` 
 
 Open **http://e-bike-bridge.local:8080** in any browser (phone, tablet, laptop).
 
-- Live speed, cadence, power, battery %, odometer — updates instantly via Server-Sent Events, no page reload
-- Battery bar with colour coding (green → orange → red)
-- Status chips: light, in motion, charging, locked, light reserve, diagnosis
-- When a bike is **offline**: card dims and shows last known values with a "Last seen X ago" label that counts up every 10 seconds
-- Both bikes shown side by side when both are connected
+- Live speed, cadence, power, battery %, odometer. Updates instantly via Server-Sent Events, no page reload.
+- Battery bar with colour coding (green, orange, red).
+- Status chips: light, in motion, charging, locked, light reserve, diagnosis.
+- When a bike is **offline**, the card dims and shows last known values with a "Last seen X ago" label that counts up every 10 seconds.
+- Both bikes shown side by side when both are connected.
+- A **Start pairing** button (under the bridge status) opens the 5 minute pairing window so you can add a bike from the Flow app. See [Privacy](#privacy).
 
 ---
 
@@ -189,11 +193,21 @@ above 85%). They read *unknown* until a reliable charging rate has built up, and
 whenever the bike isn't charging. The 80% figure is the more accurate of the two
 (the whole region up to 80% charges at a roughly constant rate).
 
-A separate **Bosch eBike Bridge** device exposes a **Bridge** connectivity binary
-sensor (`binary_sensor.bridge`). It is **on** while the Pi bridge is running and
-flips to **off** automatically — via an MQTT Last Will message — if the Pi loses
-power, crashes, or drops off the network. Use it to alert when the bridge itself
-goes down (independent of whether any bike is connected).
+### The Bosch eBike Bridge device
+
+A separate **Bosch eBike Bridge** device (manufacturer "Raspberry Pi", grouped apart from the bikes) exposes three controls, all auto discovered over MQTT:
+
+| Entity | Type | What it does |
+|---|---|---|
+| `binary_sensor.bridge` | Binary sensor | **On** while the Pi bridge is running. Flips to **off** automatically via an MQTT Last Will message if the Pi loses power, crashes, or drops off the network. Use it to alert when the bridge itself goes down. |
+| `button.start_pairing` | Button | Opens the 5 minute pairing window so a Flow app can add a bike. Same effect as the dashboard button. See [Privacy](#privacy). |
+| `binary_sensor.pairing_active` | Binary sensor | **On** while the pairing window is open. |
+
+**Where to find it.** Go to **Settings, Devices and services, MQTT** and open the **Bosch eBike Bridge** device. The three entities are listed there.
+
+**Putting the button on a dashboard.** Edit a Lovelace dashboard, **Add card**, choose a **Button** card, and set the entity to `button.start_pairing`. Tapping the card presses the button. Add `binary_sensor.pairing_active` to an Entities card if you want to see when the window is open.
+
+Nothing needs to be written in YAML. The entities appear on their own, and the bridge republishes discovery on every MQTT connect, so restarting the bridge brings them back if they ever go missing.
 
 ### Note on the `Charging` sensor (smart-charging automations)
 
