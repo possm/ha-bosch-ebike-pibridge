@@ -103,13 +103,16 @@ sudo systemctl restart bosch-ebike-bridge bosch-ebike-dashboard
 
 ## Pairing a new bike
 
-The eBike only scans for accessories when explicitly triggered via the **Bosch Flow App** — it does not connect automatically on first use.
+The eBike only scans for accessories when explicitly triggered via the **Bosch Flow App**. It does not connect automatically on first use.
 
-1. Power on the eBike and make sure the bridge is running
-2. Open the **Bosch Flow App** → your bike → **⚙ gear icon** (top-right)
-3. Tap **Components** → **Add new device**
-4. The bike enters scan mode — it should find the bridge within ~30 seconds
-5. Confirm pairing on the bike's display (no PIN needed)
+**Open a pairing window first.** For privacy, the bridge is only discoverable to Flow apps during a 5 minute pairing window. That window opens automatically for 5 minutes after the bridge boots, and you can reopen it any time by pressing the **Start pairing** button on the Bosch eBike Bridge device in Home Assistant. The **Pairing active** sensor shows whether the window is currently open. Outside the window the bridge is invisible to other people's Flow apps, but your already bonded bikes still reconnect automatically. See [Privacy](#privacy).
+
+1. Press **Start pairing** in Home Assistant (or reboot the bridge) to open the window
+2. Power on the eBike and make sure the bridge is running
+3. Open the **Bosch Flow App**, your bike, **⚙ gear icon** (top right)
+4. Tap **Components**, then **Add new device**
+5. The bike enters scan mode. It should find the bridge within about 30 seconds
+6. Confirm pairing on the bike's display (no PIN needed)
 
 > **Note on the bridge name during pairing:** in the bike's accessory list the
 > bridge may appear as a raw Bluetooth address (`A4:0D:BC:…`) rather than
@@ -123,6 +126,24 @@ keeps advertising while a slot is free and one Pi handles both bikes at once.
 
 After pairing, a bike reconnects automatically every time it powers on within
 range of the Pi.
+
+---
+
+## Privacy
+
+By default the bridge only broadcasts the Bosch LDI solicitation (the signal a Flow app looks for to add a new accessory) during a **5 minute pairing window**. The window opens automatically after each boot, and on demand via the **Start pairing** button in Home Assistant.
+
+Outside the window the bridge advertises privately: name only, not discoverable, and without the solicitation. This means:
+
+- Other people nearby with the Flow app cannot see or try to add your bridge.
+- Your already bonded bikes still reconnect automatically, because a bonded bike reconnects by its stored bond, not by the solicitation. Verified on hardware.
+
+Home Assistant gets two extra controls on the **Bosch eBike Bridge** device:
+
+- **Start pairing** (button): reopens the 5 minute pairing window.
+- **Pairing active** (binary sensor): on while the window is open.
+
+To keep the old always discoverable behaviour, set `private_advertising: false` in `config.yaml`.
 
 ---
 

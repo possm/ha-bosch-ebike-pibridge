@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import logging
 import signal
+import subprocess
 import sys
+import time
 import yaml
 
 import dbus
@@ -55,6 +57,11 @@ LDI_CHAR_UUID    = "0000eb21-eaa2-11e9-81b4-2a2ae2dbcce4"
 
 AGENT_PATH       = "/org/bosch_ebike_bridge/agent"
 ADV_PATH         = "/org/bosch_ebike_bridge/advertisement0"
+
+# How long the discoverable pairing window stays open (seconds) after boot or
+# when reopened via the HA button. Outside the window the bridge advertises
+# privately (no LDI solicitation) so strangers' Flow apps can't see it.
+PAIRING_WINDOW_SEC = 5 * 60
 
 
 # ── Pairing agent ─────────────────────────────────────────────────────────────
@@ -123,18 +130,30 @@ class LDIAdvertisement(dbus.service.Object):
     which is fragile and conflicts with bluetoothd — deliberately not done.
     """
 
-    def __init__(self, bus: dbus.SystemBus, local_name: str) -> None:
+    def __init__(self, bus: dbus.SystemBus, local_name: str,
+                 pairing: bool = True) -> None:
         dbus.service.Object.__init__(self, bus, ADV_PATH)
         self._local_name = local_name
+        # pairing=True  → discoverable + LDI solicitation, so a Flow app can add
+        #                 the bridge (used during the 5-min pairing window).
+        # pairing=False → private reconnect: name only, NO solicitation, not
+        #                 discoverable, so other people's Flow apps don't see us.
+        #                 A bonded bike still reconnects by bond/address.
+        self._pairing = pairing
 
     def _props(self) -> dict:
-        return {
-            "Type":          dbus.String("peripheral"),
-            "SolicitUUIDs":  dbus.Array([LDI_SERVICE_UUID], signature="s"),
-            "LocalName":     dbus.String(self._local_name),
-            "Appearance":    dbus.UInt16(0x0480),
-            "Discoverable":  dbus.Boolean(True),
+        props = {
+            "Type":         dbus.String("peripheral"),
+            "LocalName":    dbus.String(self._local_name),
+            "Discoverable": dbus.Boolean(bool(self._pairing)),
         }
+        if self._pairing:
+            # Only the pairing window carries the solicitation UUID + Cycling
+            # appearance — that's exactly what makes a Flow app recognise us as
+            # a pairable Bosch accessory.
+            props["SolicitUUIDs"] = dbus.Array([LDI_SERVICE_UUID], signature="s")
+            props["Appearance"] = dbus.UInt16(0x0480)
+        return props
 
     @dbus.service.method(PROPS_IFACE, in_signature="ss", out_signature="v")
     def Get(self, interface: str, prop: str):
@@ -160,6 +179,16 @@ class EbikeBridge:
         # BLE advertisement handle + adapter path (set in run()).
         self._adv = None
         self._adapter_path = None
+
+        # Pairing window: monotonic deadline (seconds) until which the bridge
+        # advertises discoverable WITH the LDI solicitation, so a Flow app can
+        # add it. Outside the window it advertises privately (no solicitation).
+        # Opened on boot and by the HA "Start pairing" button. 0 = never opened.
+        self._pairing_until = 0.0
+        # Whether the pairing window may be opened at all. When a config sets
+        # privacy off, the bridge always advertises with the solicitation (old
+        # behaviour) so nothing changes for users who want it.
+        self._privacy = bool(config.get("private_advertising", True))
 
         # Consecutive failed-pairing counter per address. A "failed pairing" is
         # a disconnect that happened before services ever resolved — the classic
@@ -275,20 +304,58 @@ class EbikeBridge:
         log.info("Just-Works pairing agent registered")
         return agent
 
+    def _pairing_open(self) -> bool:
+        """True while the discoverable pairing window is open.
+
+        When privacy is disabled this is always True, so the bridge always
+        advertises with the solicitation (the pre-privacy behaviour).
+        """
+        if not self._privacy:
+            return True
+        return self._pairing_until > time.monotonic()
+
     def _register_advertisement(self, adapter_path: str) -> LDIAdvertisement:
         local_name = self._cfg.get("bridge_name", "HA eBike Bridge")
-        adv = LDIAdvertisement(self._bus, local_name)
+        pairing = self._pairing_open()
+        adv = LDIAdvertisement(self._bus, local_name, pairing=pairing)
         mgr = dbus.Interface(
             self._bus.get_object(BLUEZ_SERVICE, adapter_path), LE_ADV_MGR_IFACE
         )
+        mode = ("PAIRING: discoverable + solicitation" if pairing
+                else "private reconnect: no solicitation, not discoverable")
         mgr.RegisterAdvertisement(
             ADV_PATH, {},
-            reply_handler=lambda: log.info(
-                "Advertising as '%s' with SolicitUUID=%s", local_name, LDI_SERVICE_UUID
-            ),
+            reply_handler=lambda: log.info("Advertising '%s' (%s)", local_name, mode),
             error_handler=lambda e: log.error("RegisterAdvertisement failed: %s", e),
         )
         return adv
+
+    def _start_pairing_idle(self) -> bool:
+        """GLib idle wrapper so an MQTT-thread button press runs on the loop."""
+        self.start_pairing()
+        return False  # run once
+
+    def start_pairing(self) -> None:
+        """Open the discoverable pairing window (HA button / boot)."""
+        self._pairing_until = time.monotonic() + PAIRING_WINDOW_SEC
+        log.info("Pairing window open for %d min — bridge is discoverable",
+                 PAIRING_WINDOW_SEC // 60)
+        self._publish_pairing_state()
+        self._readvertise()
+        # Re-advertise privately again once the window elapses, so we don't stay
+        # discoverable forever. GLib timeout fires on the main loop thread.
+        GLib.timeout_add_seconds(PAIRING_WINDOW_SEC + 1, self._pairing_window_elapsed)
+
+    def _pairing_window_elapsed(self) -> bool:
+        if not self._pairing_open():
+            log.info("Pairing window closed — switching to private advertising")
+            self._publish_pairing_state()
+            self._readvertise()
+        return False  # one-shot timer
+
+    def _publish_pairing_state(self) -> None:
+        if self._mqtt is not None:
+            self._mqtt.publish_pairing_active(self._pairing_open())
 
     def _all_known_bikes_connected(self) -> bool:
         """True if every bike listed in config is currently connected.
@@ -618,7 +685,13 @@ class EbikeBridge:
         self._adapter_path = adapter_path
         self._setup_adapter(adapter_path)
         self._register_agent()
+
+        # Open a pairing window on boot so a Flow app can add the bridge in the
+        # first 5 minutes; afterwards it advertises privately. When privacy is
+        # off, _pairing_open() is always True and this is a no-op distinction.
+        self._pairing_until = time.monotonic() + PAIRING_WINDOW_SEC
         self._adv = self._register_advertisement(adapter_path)
+        GLib.timeout_add_seconds(PAIRING_WINDOW_SEC + 1, self._pairing_window_elapsed)
 
         # Publish discovery for every configured bike up front, so their HA
         # entities (incl. the corrected 'connected' sensor) register even while
@@ -626,6 +699,14 @@ class EbikeBridge:
         for addr, bike in self._bikes.items():
             self._mqtt.publish_discovery(addr, bike["name"])
             self._mqtt.publish_availability(addr, False)
+
+        # Pairing controls (button + status) for Home Assistant. The button
+        # press arrives on the MQTT thread, so marshal start_pairing() onto the
+        # GLib main loop (all D-Bus/adv work must happen on that thread).
+        self._mqtt.publish_pairing_discovery(
+            lambda: GLib.idle_add(self._start_pairing_idle)
+        )
+        self._publish_pairing_state()
 
         self._monitor()
 

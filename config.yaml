@@ -7,6 +7,15 @@
 # is cosmetic and the correct per-bike names always appear in HA after bonding.
 bridge_name: "HA eBike Bridge"
 
+# Privacy: when true (default), the bridge only advertises the Bosch LDI
+# solicitation (what makes it visible to Flow apps) during a 5-minute pairing
+# window after boot or when you press the "Start pairing" button in HA. Outside
+# that window it advertises privately (name only, not discoverable), so other
+# people's Flow apps can't see it, while your bonded bikes still reconnect
+# automatically. Set to false to always advertise the solicitation (old
+# behaviour) if you prefer bikes to be addable at any time.
+private_advertising: true
+
 # MQTT broker – must be reachable from the Pi.
 # The Mosquitto add-on in HA works out of the box; just set the HA host IP.
 mqtt:

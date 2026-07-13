@@ -64,6 +64,14 @@ class HaMqttPublisher:
         self._bridge_avail_topic = f"{self._base}/bridge/availability"
         self._bridge_discovered = False
 
+        # Pairing controls: command topic the HA button presses, state topic
+        # for the "Pairing active" binary sensor, and the callback to invoke.
+        self._pairing_cmd_topic = f"{self._base}/bridge/pairing/set"
+        self._pairing_state_topic = f"{self._base}/bridge/pairing/state"
+        self._pairing_cb = None
+        self._pairing_discovered = False
+        self._pairing_last_state = "off"   # last published pairing-active state
+
         self._client = mqtt.Client(
             client_id="bosch-ebike-bridge",
             clean_session=False,
@@ -81,6 +89,7 @@ class HaMqttPublisher:
 
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
+        self._client.on_message = self._on_message
         self._client.connect_async(broker, port, keepalive=60)
         self._client.loop_start()
 
@@ -92,17 +101,35 @@ class HaMqttPublisher:
             # Re-publish discovery for all known bikes after reconnect
             self._discovered.clear()
             self._bridge_discovered = False
+            self._pairing_discovered = False
             # Announce the bridge itself as online (counterpart to the LWT).
             self.publish_bridge_discovery()
             self._client.publish(
                 self._bridge_avail_topic, "online", qos=1, retain=True
             )
+            # Re-subscribe to the pairing button command topic after (re)connect.
+            self._client.subscribe(self._pairing_cmd_topic)
+            # Re-publish pairing discovery + state if a callback was registered
+            # (connect_async may complete after publish_pairing_discovery ran).
+            if self._pairing_cb is not None:
+                self.publish_pairing_discovery(self._pairing_cb)
+                self._client.publish(
+                    self._pairing_state_topic, self._pairing_last_state, retain=True
+                )
         else:
             log.error("MQTT connect failed (rc=%d)", rc)
 
     def _on_disconnect(self, client, userdata, rc: int) -> None:
         if rc != 0:
             log.warning("MQTT disconnected unexpectedly (rc=%d), will retry", rc)
+
+    def _on_message(self, client, userdata, msg) -> None:
+        if msg.topic == self._pairing_cmd_topic and self._pairing_cb is not None:
+            log.info("Pairing button pressed via HA")
+            try:
+                self._pairing_cb()
+            except Exception as exc:
+                log.error("Pairing callback failed: %s", exc)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -140,6 +167,57 @@ class HaMqttPublisher:
             retain=True,
         )
         log.info("Published HA discovery for bridge connectivity sensor")
+
+    def publish_pairing_discovery(self, callback) -> None:
+        """Publish HA discovery for the pairing button + 'Pairing active' sensor.
+
+        The button (an MQTT button entity) publishes to the command topic; the
+        binary sensor reflects whether the discoverable pairing window is open.
+        `callback` is invoked (no args) when the button is pressed.
+        """
+        self._pairing_cb = callback
+        device = {
+            "identifiers": ["bosch_ebike_pi_bridge"],
+            "name": "Bosch eBike Bridge",
+            "manufacturer": "Raspberry Pi",
+            "model": "BLE → MQTT bridge",
+        }
+        self._client.publish(
+            "homeassistant/button/bosch_ebike_bridge_pairing/config",
+            json.dumps({
+                "name": "Start pairing",
+                "unique_id": "bosch_ebike_bridge_pairing",
+                "command_topic": self._pairing_cmd_topic,
+                "payload_press": "PRESS",
+                "icon": "mdi:bluetooth-connect",
+                "availability_topic": self._bridge_avail_topic,
+                "device": device,
+            }),
+            retain=True,
+        )
+        self._client.publish(
+            "homeassistant/binary_sensor/bosch_ebike_bridge_pairing_active/config",
+            json.dumps({
+                "name": "Pairing active",
+                "unique_id": "bosch_ebike_bridge_pairing_active",
+                "state_topic": self._pairing_state_topic,
+                "payload_on": "on",
+                "payload_off": "off",
+                "device_class": "running",
+                "availability_topic": self._bridge_avail_topic,
+                "device": device,
+            }),
+            retain=True,
+        )
+        self._pairing_discovered = True
+        log.info("Published HA discovery for pairing button + status")
+
+    def publish_pairing_active(self, active: bool) -> None:
+        """Publish the current pairing-window state (retained)."""
+        self._pairing_last_state = "on" if active else "off"
+        self._client.publish(
+            self._pairing_state_topic, self._pairing_last_state, retain=True
+        )
 
     def publish_discovery(self, bike_id: str, bike_name: str) -> None:
         """Publish HA MQTT discovery config for all entities of one bike.
