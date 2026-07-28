@@ -250,6 +250,7 @@ sudo systemctl restart bosch-ebike-bridge bosch-ebike-dashboard
 | `MQTT connect failed (rc=5)` | Wrong credentials | Check `config.yaml`; verify the user exists in the Mosquitto add-on config |
 | `org.bluez.Error.Failed` on start | Bluetooth soft-blocked by rfkill | `sudo rfkill unblock bluetooth` — the service does this automatically on the next restart |
 | Bike not found in Flow App scan | Bridge not advertising | Check `ActiveInstances: 1` via `sudo bluetoothctl show` |
+| Bridge advertises but the bike never finds it | Bike out of BLE range of the bridge, or the kernel's default 1280 ms advertising interval is too slow for the bike's ~30 s accessory scan | Pair with the bike within a few metres of the bridge and check the adapter's antenna placement. Optionally set `MinAdvertisementInterval=0x00A0` / `MaxAdvertisementInterval=0x00F0` under `[LE]` in `/etc/bluetooth/main.conf` (0.625 ms units = 100–150 ms), then `sudo systemctl restart bluetooth bosch-ebike-bridge` |
 | Bridge shows as a MAC address, not its name, during pairing | BlueZ sends the name in the scan response, which the bike's passive scan ignores | Cosmetic — select it anyway; correct names appear in HA after bonding |
 | Second bike won't connect while first is connected | Older version, or advertising stopped after the first connect | Update to the latest version (re-advertises after each connection) |
 | `LDI characteristic not found` | eBike firmware < v19 | Update firmware via the Bosch Flow App |

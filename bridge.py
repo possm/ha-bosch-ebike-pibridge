@@ -63,6 +63,11 @@ ADV_PATH         = "/org/bosch_ebike_bridge/advertisement0"
 # privately (no LDI solicitation) so strangers' Flow apps can't see it.
 PAIRING_WINDOW_SEC = 5 * 60
 
+# After this many consecutive disconnects that happen before services resolved
+# (the stale-bond signature), the bond for that address is dropped so the bike
+# can re-pair cleanly. See _on_disconnected() / _remove_bond().
+STALE_BOND_THRESHOLD = 3
+
 
 # ── Pairing agent ─────────────────────────────────────────────────────────────
 
